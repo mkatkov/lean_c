@@ -1,0 +1,17 @@
+name = "lean_c"
+version = "0.1.0"
+defaultTargets = ["test"]
+
+[[lean_lib]]
+name = "LeanC"
+globs = ["LeanC.*"]
+
+[[lean_lib]]
+name = "Tests"
+globs = ["Tests.*"]
+
+[[lean_exe]]
+name = "test"
+globs = ["test.*"]
+
+
