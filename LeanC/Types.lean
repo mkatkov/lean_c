@@ -8,9 +8,10 @@ inductive definitions during initial prototyping.
 
 namespace LeanC
 
+universe u
 /- we want flexible size types, so we defne it as class -/
 
-class CTypeSize (α : Type) where
+class CTypeSize (α : Type u) where
   sizeOf : α -> Nat
   alignOf : α -> Nat
 
@@ -55,57 +56,37 @@ instance : CTypeSize CFloatSize where
 Identifier, each identifier has it unique reference
 -/
 inductive Identifier where
-  | id : Nat -> Identifier
-
-class CType (α : Type) where
-  toCType : α -> CType α
+  | mk : Nat -> Identifier
 
 inductive CSimpleType where
   | cvoid  : CSimpleType
   | cint   : CIntSize -> Bool -> CSimpleType -- bitwidth, unsigned?
   | cfloat : CFloatSize -> CSimpleType
 
-inductive CPointerType α where
-  | mk : CType α -> CPointerType α
-inductive CArrayType α where
-  | mk : CType α -> Nat -> CArrayType α
+mutual
+inductive CType (α : Type) (β : Type) where
+| void : CType α β
+| int : CIntSize -> Bool -> CType α β
+| float : CFloatSize -> CType α β
+| ptr : CPointerType α β -> CType α β
+| arr : CArrayType α β -> CType α β
+| union :  CStruct α β -> CType α β
+| struct : CStruct α β -> CType α β
 
-inductive CInStructureField α where
-  | simple : Identifier -> CSimpleType -> CInStructureField α
-  | ptr    : Identifier -> CPointerType α -> CInStructureField α
-  | array  : Identifier -> CArrayType α -> CInStructureField α
+inductive CPointerType (α : Type) (β : Type) where
+  | mk : CType α β -> CPointerType α β
+inductive CArrayType (α : Type) (β : Type) where
+  | mk : CType α β -> Nat -> CArrayType α β
 
-universe u
+inductive CInStructureField (α : Type) (β : Type) where
+  | simple : Identifier -> CSimpleType -> CInStructureField α β
+  | ptr    : Identifier -> CPointerType α β -> CInStructureField α β
+  | array  : Identifier -> CArrayType α β -> CInStructureField α β
 
-def HList (τs : List (Type u)) : Type u := τs.foldr Prod PUnit
+inductive CStruct α β where
+| intro (x: CInStructureField α β) : CStruct α β
+| cons (x : CInStructureField α β) (xs : CStruct α β ) : CStruct α β
 
-@[match_pattern] def HList.nil : HList [] := PUnit.unit
-
-@[match_pattern] def HList.cons {τ : Type u} {τs : List (Type u)} (x : τ) (xs : HList τs) :
-    HList (τ :: τs) := (x, xs)
-
-def HList.rec {motive : (τs : List (Type u)) → HList τs → Sort u}
-    (nil : motive [] HList.nil)
-    (cons : {τ : Type u} → {τs : List (Type u)} → (x : τ) → (xs : HList τs) →
-              motive τs xs → motive (τ :: τs) (HList.cons x xs))
-    {τs : List (Type u)} (xs : HList τs) : motive τs xs :=
-  match τs, xs with
-  | [], PUnit.unit => nil
-  | _ :: _, (x, xs) => cons x xs (HList.rec nil cons xs)
-
-instance : CType CSimpleType where
-  toCType
-  | x => CType x
-
-inductive CType where
-  | cvoid  : CType
-  | cint   : IntSize -> Bool -> CType -- bitwidth, unsigned?
-  | cfloat : FloatSize -> CType
-  | cptr   : CType -> CType
-  | carray : CType -> Nat -> CType
-  | cstruct : FieldList -> CType -- struct identified by name; fields handled elsewhere
-  | cunion : FieldList -> CType
-
-
+end
 
 end LeanC
