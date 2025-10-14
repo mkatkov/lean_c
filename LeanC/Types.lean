@@ -1,17 +1,27 @@
 import LeanC.Prod
 
 /-!
-Basic C type representations for lean_c - small, valid stub used by the roadmap.
-This file intentionally keeps cstruct simple (identified by name). Field
-descriptions and layout logic will live in a separate module to avoid nested
-inductive definitions during initial prototyping.
+# C Type System for lean_c
+
+This module defines the core C type system including:
+- Basic types (integers, floats, void)
+- Composite types (pointers, arrays, structs, unions, functions)
+- Type size and alignment calculations
+- Type resolution and code generation framework
+
+The implementation uses mutual inductive definitions to handle recursive type
+dependencies (e.g., structs containing pointers to other structs).
+Type production and identifier resolution are handled through type classes
+to support different code generation contexts.
+
+we still miss typedef production for readability
 -/
 
 namespace LeanC
 
 universe u
-/- we want flexible size types, so we defne it as class -/
-
+/--
+we want flexible size types, so we defne it as class -/
 class CTypeSize (α : Type u) where
   sizeOf : α -> Nat
   alignOf : α -> Nat
@@ -65,101 +75,146 @@ instance : CTypeSize CFloatSize where
     | .F64 => "float64_t"
 
 /--
-Identifier, each identifier has it unique reference
+Identifier, each identifier has it unique reference that can be used to resolve to the name in production
 -/
 inductive Identifier where
   | mk : Nat -> Identifier
 
 /--
-This is trivial identifier resolver
+This is trivial identifier resolver it resolve identifier to string by prefixing
+it with "id_" in empty context. this is good enough if one can prove that all identifiers
+are unique in the given context.
+
+Since this resolver cannot be proven to be correct in all contexts, it should not be used,
+and is shown as an example how resolver can be defined.
+On the other hand, this resolver can be used for internal debugging.
 -/
-instance : CResolver Unit Identifier String where
-resolve := fun _ value => match value with
+instance {α : Type}: CValueResolver α Empty Identifier String where
+get_value := fun _ _ value => match value with
   | .mk n =>  "id_" ++ toString n
 
+
 mutual
-inductive CType (α : Type) (β : Type) where
-| void : CType α β
-| int : CIntSize -> Bool -> CType α β
-| float : CFloatSize -> CType α β
-| ptr : CPointerType α β -> CType α β
-| arr : CArrayType α β -> CType α β
-| union :  CStruct α β -> CType α β
-| struct : CStruct α β -> CType α β
-| func : CFunction α β → CType α β
 
-inductive CFunction (α : Type) (β : Type) where
-| mk : Identifier → (args: CStruct α β) → (ellipses : Bool) → CType α β -> CFunction α β
-inductive CPointerType (α : Type) (β : Type) where
-  | mk : CType α β -> CPointerType α β
-inductive CArrayType (α : Type) (β : Type) where
-  | mk : CType α β -> Nat -> CArrayType α β
+/-- CType represent all C types. -/
+inductive CType where
+| void : CType
+| int : CIntSize -> Bool -> CType
+| float : CFloatSize -> CType
+| ptr : CPointerType  -> CType
+| arr : CArrayType  -> CType
+| union :  CStruct  -> CType
+| struct : CStruct  -> CType
+| func : CFunction  → CType
 
-inductive CInStructureField (α : Type) (β : Type) where
-  | int : Identifier → CIntSize -> Bool -> CInStructureField α β
-  | float : Identifier → CFloatSize -> CInStructureField α β
-  | simple : Identifier -> CSimpleType -> CInStructureField α β
-  | ptr    : Identifier -> CPointerType α β -> CInStructureField α β
-  | array  : Identifier -> CArrayType α β -> CInStructureField α β
 
-inductive CStruct α β where
-| intro (x: CInStructureField α β) : CStruct α β
-| cons (x : CInStructureField α β) (xs : CStruct α β ) : CStruct α β
+/-- CFunction represents a C function type.
+
+identifier → arguments → (does it have variable arguments? : Bool) → return type -/
+inductive CFunction  where
+| mk : Identifier → (args: CStruct ) → (ellipses : Bool) → CType  -> CFunction
+
+/-- CPointerType represents a C pointer type.
+
+There is no restriction to what pointer type can point to.
+-/
+inductive CPointerType  where
+  | mk : CType  -> CPointerType
+
+/-- CArrayType represents a C array type.
+
+CArray has element type and size. It is usually stack allocated, when declared.
+However we can define a pointer to an array type as well. This can be in heap, but we indicate that
+each array has fixed size.
+-/
+inductive CArrayType  where
+  | mk : CType  -> Nat -> CArrayType
+
+inductive CStruct where
+| nil : CStruct
+| cons (x : CType) (id: Identifier) (xs : CStruct  ) : CStruct
 
 end
 
-/--
-For code production we need to know whether we have declaration or casting request
--/
-inductive CTypeProd where
-| decl
-| cast
+/-- uint32_t -/
+def _example1 : CType :=
+  .int .i32 true
+
+/-- uint32_t* -/
+def _example2 : CType  :=
+  .ptr (.mk (.int .i32 true))
+/-- uint32_t[10] -/
+def _example3 : CType  :=
+  .arr (.mk (.int .i32 true) 10)
+/-- struct { uint32_t; float64_t; } -/
+def _example4 : CType  :=
+  .struct (.cons (.int .i32 true) (.mk 0) (.cons (.float .F64) (.mk 1) .nil))
+/-- void function_with_identifier_1 (uint32_t) -/
+def _example5 : CType  :=
+  .func (.mk (Identifier.mk 1) (.cons (.int .i32 true) (.mk 0) .nil) false (.void))
 
 /--
-For type production we need to specify names of variables in declaration
-this is not required, though, for casting
+For code production we need to know whether we have a declaration or a casting request
 -/
-class CType_CIdentifier_Resolver (α : Type u ) ( β : Type v) (γ :Type w) where
- type_prod : CTypeProd
- identifier_resolver :  ( context : α ) -> (value: β) → γ
+inductive CTypeDeclarationProd where
+| mk : CType → Identifier → CTypeDeclarationProd
 
-/--
-Pointer production depends on few factors:
-1. whether it is declaration or casting
-2. on pointer type, for instance function pointer is different than int pointer.
+inductive CTypeCastProd where
+| mk : CType -> CTypeCastProd
 
-conceptually we should use resolver to get correct information
--/
-instance : CProduction (context_t :Type) ( CPointerType (α : Type) ( β : Type)  ) ( resolver_result_t   )  where
- prod ( pt : CPointerType α β ) stream resolver context :=
-  let prod_type := resolver.type_prod
-  match pt with
-    | .mk (t: CType α β ) => match t with
-     | .func (_fa : CFunction α β ) => do
-        stream.putStr "("
+mutual
+def produce_field_types (stream : IO.FS.Stream) (sep:String) (s : CStruct)  : EIO IO.Error Unit := match s with
+  | .nil => pure ()
+  | .cons t _id ts => do
+    produce_type_signature stream t
+    stream.putStr sep
+    produce_field_types stream sep ts
+
+def produce_type_signature (stream : IO.FS.Stream) (t : CType)  : EIO IO.Error Unit := match t with
+  | .void => stream.putStr "void"
+  | .int sz sgn  => match sgn with
+    | false =>  stream.putStr ("u" ++ CTypeSize.type_str sz )
+    | true => stream.putStr (CTypeSize.type_str sz )
+  | .float sz => stream.putStr (CTypeSize.type_str sz )
+  | .ptr pt => match pt with /- function pointer is special and cannot be casted actually -/
+    | .mk (t: CType) => do
+      stream.putStr "("
+      produce_type_signature stream t
+      stream.putStr "*)"
+  | .arr arr => match arr with
+    | .mk (t: CType) n => do
+      produce_type_signature stream t
+      stream.putStr ("[" ++ toString n ++ "]")
+  | .union s  => do
+      stream.putStr "union{"
+      produce_field_types stream "; " s
+      stream.putStr "}"
+  | .struct s => do
+      stream.putStr "struct{"
+      produce_field_types stream "; " s
+      stream.putStr "}"
+  | .func f => match f with
+      | .mk _id args ellipses ret => do
+        produce_type_signature stream ret
+        stream.putStr " ("
+        produce_field_types stream ", " args
+        if ellipses then
+          match args with
+          | .nil => stream.putStr "..."
+          | _ => stream.putStr ", ..."
         stream.putStr ")"
-        throw (.userError "no pure function type declaration even ffor pointers")
-     | _ => stream.putStr "_"
+
+end
+set_option diagnostics true
+
+instance :
+    CProduction context_t CTypeCastProd resolver_t  where
+ prod stream _context ct _resolver := do match ct with
+  | .mk t => do
+    stream.putStr "("
+    produce_type_signature stream t
+    stream.putStr ")"
 
 
-
-instance : CProduction context (CType α β ) context where
- prod
- | .void => fun stream _ _ => stream.putStr "void"
- | .int sz sgn => fun stream _ _ => match sgn with
-   | false =>  stream.putStr ("u" ++ CTypeSize.type_str sz)
-   | true => stream.putStr ( CTypeSize.type_str sz )
- | .float sz => fun stream _ _ => stream.putStr (CTypeSize.type_str sz)
- | .ptr pt => fun stream r c => CProduction.prod pt stream r c
- | .arr _arr => fun _stream r c => CProduction.prod _arr stream r c
- | .union _s => fun stream r c => stream.putStr "union"
- | .struct _s => fun stream r c => stream.putStr "struct"
- | .func _f => fun _stream r c => throw (.userError "no pure function type declaration")
-
-
-instance : CProduction (CTypeProd α β)  where
- prod
-  | .decl a =>  CProduction.prod a
-  | .cast a => CProduction.prod a
 
 end LeanC
