@@ -1,21 +1,21 @@
 # lean_c
 
-the goal of the project is to be able to produce c code from lean4 code. There are two main advantages to this:
-# 1. C code is portable and can be compiled on many platforms, moreover the final binaries can be very small
-# 2. C code can be proven to have certain properties, like runtime guarantees, memory safety, etc. using lean proofs.
+the goal of the project is to be able to produce C code from lean4 code with some guarantees. There are two main advantages to this:
+ 1. C code is portable and can be compiled on many platforms, moreover the final binaries can be very small
+ 2. C code can be proven to have certain properties, like runtime guarantees, memory safety, etc. using lean proofs.
 
 # Current status
 The project is in its early stage. 
-we initially implement minimal subset of https://xavierleroy.org/publi/Clight.pdf that can produce running C program.
+we initially implement minimal subset of https://xavierleroy.org/publi/Clight.pdf or C99 that can produce running C program.
 
 ## Project layout
 
 Top-level directories and files added for the roadmap implementation:
 
 - `LeanC/` - Lean source modules (Types, Literals, Expr, Stmt, Func, Modules, Program, Memory, Verification).
-- `doc/modules.md` - Responsibilities of each Lean module.
+ - `doc/modules.md` - Responsibilities of each Lean module.
  - `doc/roadmap.md` - Project roadmap and high-level milestones.
-
+ - `doc/ideas.md` - Current understanding 
 
 ## Testing and examples
 

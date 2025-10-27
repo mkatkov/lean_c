@@ -1,4 +1,5 @@
 import LeanC.Prod
+-- import LeanC.Scope
 
 /-!
 # C Type System for lean_c
@@ -9,17 +10,78 @@ This module defines the core C type system including:
 - Type size and alignment calculations
 - Type resolution and code generation framework
 
-The implementation uses mutual inductive definitions to handle recursive type
-dependencies (e.g., structs containing pointers to other structs).
-Type production and identifier resolution are handled through type classes
-to support different code generation contexts.
+It provides a foundation for representing and manipulating C types within the LeanC framework.
+The implementation has the following structure:
+for each actual C Type there is a corresponding Lean inductive type definition.
+filtering arguments is performed using type classes withthe following convention:
+class IsC<Question> (α : Type u) where
+  isC<Question> : Prop
 
-we still miss typedef production for readability
+This has two main advantages:
+1. It allows us to define generic functions that can operate on any C type by constraining
+   the type parameters using these type classes.
+2. It provides a clear and extensible way to categorize and manage different C types
+3. having Prop for the result allows to prove correctness if one need to do so.
+
+
+types:
+void
+char types
+integer types
+floating point types
+pointer types
+array types
+struct types
+union types
+function types
+typedef types
+
+- we are missing structure bits
 -/
 
 namespace LeanC
 
 universe u
+
+/-- IsCType is a type class for distinguishing C types from other types. -/
+class IsCType (α : Type u) where
+  /-- Proof that the type α is a C type -/
+  isCType : Prop
+class IsCFuncArgType (α : Type u) where
+  /-- Proof that the type α is a C type -/
+  isCType : Prop
+
+/--
+IdentifierProducer is a type class for producing unique identifiers for types, labels or identifiers.
+α is producer flavor type
+β is scope type - by abuse of notation it is also identifier
+-/
+
+class IdentifierProducer (α : Type u)  (β :Type v) where
+  produce_identifier : (x:β) → IO.FS.Stream → EIO IO.Error Unit
+  can_produce : (x:β) → Prop
+  are_identifiers_unique : (x : β) → Prop
+
+/-- CLabelScope represents the scope of labels in C.
+labels appear inside function and this would be function scope
+But also types have CLabelScope. For instance typedefs can define type labels.
+The distinctive feature these scopes do not have types associated with them.
+They are resolved with names only.
+
+The only requirements we have is that we can produce unique identifiers for labels.
+-/
+def CLabelScope := Nat
+
+/-- α is a list of c types -/
+inductive CVarScope : (List (Type u)) -> Type (u+1) where
+  | nil : CVarScope []
+  | cons {τs : List (Type u)} (τ : Type u ) [IsCType τ] (_ :CVarScope τs)  : CVarScope (τ :: τs)
+
+example := CVarScope.nil
+inductive CFuncArgVarScope : (List (Type u)) -> Type (u+1) where
+  | nil : CFuncArgVarScope []
+  | cons {τs : List (Type u)} (τ : Type u ) [IsCFuncArgType τ] (_ :CFuncArgVarScope τs)  : CFuncArgVarScope (τ :: τs)
+
 /--
 we want flexible size types, so we defne it as class -/
 class CTypeSize (α : Type u) where
@@ -74,147 +136,159 @@ instance : CTypeSize CFloatSize where
     | .F32 => "float32_t"
     | .F64 => "float64_t"
 
-/--
-Identifier, each identifier has it unique reference that can be used to resolve to the name in production
--/
-inductive Identifier where
-  | mk : Nat -> Identifier
-
-/--
-This is trivial identifier resolver it resolve identifier to string by prefixing
-it with "id_" in empty context. this is good enough if one can prove that all identifiers
-are unique in the given context.
-
-Since this resolver cannot be proven to be correct in all contexts, it should not be used,
-and is shown as an example how resolver can be defined.
-On the other hand, this resolver can be used for internal debugging.
--/
-instance {α : Type}: CValueResolver α Empty Identifier String where
-get_value := fun _ _ value => match value with
-  | .mk n =>  "id_" ++ toString n
+class CTypeQualification (α : Type u) where
+  isCTypeQualification : Prop
 
 
-mutual
+inductive CTypeQualificationNone where
+| mk : CTypeQualificationNone
+instance : CTypeQualification CTypeQualificationNone where
+  isCTypeQualification := True
 
-/-- CType represent all C types. -/
-inductive CType where
-| void : CType
-| int : CIntSize -> Bool -> CType
-| float : CFloatSize -> CType
-| ptr : CPointerType  -> CType
-| arr : CArrayType  -> CType
-| union :  CStruct  -> CType
-| struct : CStruct  -> CType
-| func : CFunction  → CType
+inductive CTypeQualificationConst where
+  | Const
+instance : CTypeQualification CTypeQualificationConst where
+  isCTypeQualification := True
+
+inductive CTypeQualificationVolatile where
+  | Volatile
+instance : CTypeQualification CTypeQualificationVolatile where
+  isCTypeQualification := True
+
+inductive CTypeQualificationRestrict where
+  | Restrict
+instance : CTypeQualification CTypeQualificationRestrict where
+  isCTypeQualification := True
 
 
-/-- CFunction represents a C function type.
+/-- Void type -/
+inductive CVoidType (α : Type)  where
+  | mk : CVoidType α
+instance {α :Type} [CTypeQualification α] : IsCType (CVoidType α) where
+  isCType := True
 
-identifier → arguments → (does it have variable arguments? : Bool) → return type -/
-inductive CFunction  where
-| mk : Identifier → (args: CStruct ) → (ellipses : Bool) → CType  -> CFunction
+/-- Void type (α - type qualification) -/
+inductive CCharType (α : Type) [CTypeQualification α]  where
+  | mk : CCharType α
+instance {α :Type} [CTypeQualification α] : IsCType (CCharType α) where
+  isCType := True
+instance {α :Type} [CTypeQualification α] : IsCFuncArgType (CCharType α) where
+  isCType := True
+instance {α :Type} [CTypeQualification α] : CTypeSize (CCharType α) where
+  sizeOf _ := 1
+  alignOf _ := 1
+  type_str _ := "char"
 
-/-- CPointerType represents a C pointer type.
+/-- CTypedef represents a C typedef definition. -/
+inductive CTypedef (α:Type u) [IsCType α] (β  : Type) [CTypeQualification β]   where
+  | mk : CTypedef α β
+instance (α : Type u) [IsCType α] {β  :Type} [CTypeQualification β]  : IsCType (CTypedef α β) where
+  isCType := True
+instance (α : Type u) [IsCType α] {β  :Type} [CTypeQualification β] : IsCFuncArgType (CTypedef α β) where
+  isCType := True
 
+
+inductive CIntType (sz : CIntSize) (sgn : Bool) (β  : Type) [CTypeQualification β] where
+| mk : CIntType sz sgn β
+instance (sz : CIntSize) (sgn : Bool) {β  :Type} [CTypeQualification β] : IsCType (CIntType sz sgn β) where
+  isCType := True
+instance (sz : CIntSize) (sgn : Bool) {β  :Type} [CTypeQualification β] : IsCFuncArgType (CIntType sz sgn β) where
+  isCType := True
+
+inductive CFloatType (sz : CFloatSize) (β  : Type) [CTypeQualification β] where
+| mk : CFloatType sz β
+instance (sz : CFloatSize) {β  :Type} [CTypeQualification β] : IsCType (CFloatType sz β) where
+  isCType := True
+instance (sz : CFloatSize) {β  :Type} [CTypeQualification β] : IsCFuncArgType (CFloatType sz β) where
+  isCType := True
+
+/-- CPointer_t represents a C pointer type.
 There is no restriction to what pointer type can point to.
 -/
-inductive CPointerType  where
-  | mk : CType  -> CPointerType
+inductive CPointer_t (α : Type u) [IsCType α] (β  : Type) [CTypeQualification β] where
+  | mk : CPointer_t α β
+instance (α : Type u) [IsCType α] {β  :Type} [CTypeQualification β] : IsCType (CPointer_t α β) where
+  isCType := True
 
-/-- CArrayType represents a C array type.
+instance (α : Type u) [IsCType α] {β  :Type} [CTypeQualification β] : IsCFuncArgType (CPointer_t α β) where
+  isCType := True
+
+
+/-- CArray_t represents a C array type.
 
 CArray has element type and size. It is usually stack allocated, when declared.
 However we can define a pointer to an array type as well. This can be in heap, but we indicate that
 each array has fixed size.
 -/
-inductive CArrayType  where
-  | mk : CType  -> Nat -> CArrayType
+inductive CArray_t (α : Type u) [IsCType α] (β  : Type) [CTypeQualification β] where
+  | mk : Nat → CArray_t α β
+instance (α : Type u) [IsCType α] {β  :Type} [CTypeQualification β] : IsCType (CArray_t α β) where
+  isCType := True
+instance (α : Type u) [IsCType α] {β  :Type} [CTypeQualification β] : IsCFuncArgType (CArray_t α β) where
+  isCType := True
 
-inductive CStruct where
-| nil : CStruct
-| cons (x : CType) (id: Identifier) (xs : CStruct  ) : CStruct
 
-end
+/-- we need to build scope together with the type
+since for the struct to be usefull we need to be able to acces it
+By the contract the first item in the scope is a type that can produce all identifiers in this scope.
 
-/-- uint32_t -/
-def _example1 : CType :=
-  .int .i32 true
-
-/-- uint32_t* -/
-def _example2 : CType  :=
-  .ptr (.mk (.int .i32 true))
-/-- uint32_t[10] -/
-def _example3 : CType  :=
-  .arr (.mk (.int .i32 true) 10)
-/-- struct { uint32_t; float64_t; } -/
-def _example4 : CType  :=
-  .struct (.cons (.int .i32 true) (.mk 0) (.cons (.float .F64) (.mk 1) .nil))
-/-- void function_with_identifier_1 (uint32_t) -/
-def _example5 : CType  :=
-  .func (.mk (Identifier.mk 1) (.cons (.int .i32 true) (.mk 0) .nil) false (.void))
-
-/--
-For code production we need to know whether we have a declaration or a casting request
+The first list is a list of identifier producers for argument types having identifiers in it, like CStruct_t
+The rest is just CTypes.
 -/
-inductive CTypeDeclarationProd where
-| mk : CType → Identifier → CTypeDeclarationProd
 
-inductive CTypeCastProd where
-| mk : CType -> CTypeCastProd
+def CTrivialLabelScopeProducer := Unit
+instance : IdentifierProducer CTrivialLabelScopeProducer Nat where
+  produce_identifier val stream := stream.putStr s!"id_{val}"
+  can_produce _ := True
+  are_identifiers_unique _ := True
 
-mutual
-def produce_field_types (stream : IO.FS.Stream) (sep:String) (s : CStruct)  : EIO IO.Error Unit := match s with
-  | .nil => pure ()
-  | .cons t _id ts => do
-    produce_type_signature stream t
-    stream.putStr sep
-    produce_field_types stream sep ts
+inductive CStructType (β:Type) (α:Type) [IdentifierProducer β  α ] (γ : Type) [CTypeQualification γ] where
+  | mk  (τ : CVarScope δ) : CStructType β α γ
+instance (β:Type) (α:Type) [IdentifierProducer β  α ] (γ : Type) [CTypeQualification γ] : IsCType (CStructType β α γ) where
+  isCType := True
+instance (β:Type) (α:Type) [IdentifierProducer β  α ] (γ : Type) [CTypeQualification γ] : IsCFuncArgType (CStructType β α γ) where
+  isCType := True
 
-def produce_type_signature (stream : IO.FS.Stream) (t : CType)  : EIO IO.Error Unit := match t with
-  | .void => stream.putStr "void"
-  | .int sz sgn  => match sgn with
-    | false =>  stream.putStr ("u" ++ CTypeSize.type_str sz )
-    | true => stream.putStr (CTypeSize.type_str sz )
-  | .float sz => stream.putStr (CTypeSize.type_str sz )
-  | .ptr pt => match pt with /- function pointer is special and cannot be casted actually -/
-    | .mk (t: CType) => do
-      stream.putStr "("
-      produce_type_signature stream t
-      stream.putStr "*)"
-  | .arr arr => match arr with
-    | .mk (t: CType) n => do
-      produce_type_signature stream t
-      stream.putStr ("[" ++ toString n ++ "]")
-  | .union s  => do
-      stream.putStr "union{"
-      produce_field_types stream "; " s
-      stream.putStr "}"
-  | .struct s => do
-      stream.putStr "struct{"
-      produce_field_types stream "; " s
-      stream.putStr "}"
-  | .func f => match f with
-      | .mk _id args ellipses ret => do
-        produce_type_signature stream ret
-        stream.putStr " ("
-        produce_field_types stream ", " args
-        if ellipses then
-          match args with
-          | .nil => stream.putStr "..."
-          | _ => stream.putStr ", ..."
-        stream.putStr ")"
+inductive CUnionType (β:Type) (α:Type) [IdentifierProducer β  α ]  (γ : Type) [CTypeQualification γ] where
+  | mk : CVarScope δ → CUnionType β α γ
+instance (β:Type) (α:Type) [IdentifierProducer β  α ] (γ : Type) [CTypeQualification γ] : IsCType (CUnionType β α γ) where
+  isCType := True
+instance (β:Type) (α:Type) [IdentifierProducer β  α ] (γ : Type) [CTypeQualification γ] : IsCFuncArgType (CUnionType β α γ) where
+  isCType := True
 
-end
-set_option diagnostics true
 
-instance :
-    CProduction context_t CTypeCastProd resolver_t  where
- prod stream _context ct _resolver := do match ct with
-  | .mk t => do
-    stream.putStr "("
-    produce_type_signature stream t
-    stream.putStr ")"
+example : CStructType CTrivialLabelScopeProducer Nat CTypeQualificationNone := CStructType.mk (CVarScope.cons (CIntType .i32 true CTypeQualificationNone) (CVarScope.cons (CVoidType CTypeQualificationNone) CVarScope.nil) )
 
+
+/-- CFunction represents a C function type.
+
+arguments → (does it have variable arguments? : Bool) → return type
+TODO: one have to take care of void ctype would not be a part of argument types
+-/
+
+inductive CFunctionType (arg_types : CFuncArgVarScope γ) (elipses : Bool) (ret_type : Type u) [IsCType ret_type] where
+  | mk : CFunctionType arg_types elipses ret_type
+instance (arg_types : CFuncArgVarScope γ) (elipses : Bool) (ret_type : Type u) [IsCType ret_type] :
+    IsCType (CFunctionType arg_types elipses ret_type) where
+  isCType := True
+
+example : CFunctionType (CFuncArgVarScope.cons (CIntType .i32 true CTypeQualificationNone) (CFuncArgVarScope.cons (CFloatType .F64 CTypeQualificationNone) CFuncArgVarScope.nil)) false (CVoidType CTypeQualificationNone) :=
+  CFunctionType.mk
+
+example :=
+  let args := CFuncArgVarScope.cons (CIntType .i32 true CTypeQualificationNone)
+              (CFuncArgVarScope.cons (CFloatType .F64 CTypeQualificationNone)
+              CFuncArgVarScope.nil)
+  let ret := CVoidType CTypeQualificationNone
+  (CFunctionType.mk : CFunctionType args false ret )
+
+
+/- we need type production:
+
+There are two options here:
+1. we have declaration -- "type identifier;"
+2. we have casting -- "(type)"
+-/
 
 
 end LeanC
