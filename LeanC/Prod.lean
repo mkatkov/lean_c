@@ -13,3 +13,20 @@ class CProduction (α : Type ) ( β : Type) where
   correctness_proof : ( x: α ) → (context :β ) → Prop
 
 end LeanC
+
+
+inductive Capacity where
+| c1 : Capacity
+| c2 : Capacity
+
+class CapacityValue (a:Type) where
+  capacity_of : Nat
+
+inductive WithinCapacity (c:Type) (n:Nat) where
+ | within_capacity [CapacityValue c] ( _ : n<= CapacityValue.capacity_of c) : WithinCapacity c n
+
+instance : CapacityValue Capacity where
+  capacity_of := 4 -- say 4 bytes
+
+example : WithinCapacity Capacity 2 :=
+  WithinCapacity.within_capacity (by decide)

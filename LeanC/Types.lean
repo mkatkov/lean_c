@@ -36,7 +36,8 @@ union types
 function types
 typedef types
 
-- we are missing structure bits
+
+- there are some minor issues with type qualifications that need to be resolved. in particular in functions.
 -/
 
 namespace LeanC
@@ -49,7 +50,15 @@ class IsCType (α : Type u) where
   isCType : Prop
 class IsCFuncArgType (α : Type u) where
   /-- Proof that the type α is a C type -/
-  isCType : Prop
+  isCFuncArgType : Prop
+/-- All function types are c types -/
+instance {α :Type u} [IsCFuncArgType α] : IsCType α where
+  isCType := True
+class IsIntegerType (α : Type u) where
+  /-- Proof that the type α is an integer C type -/
+  isIntegerType : Prop
+class CSizeOf (α : Type u) where
+  size_of : Nat
 
 /--
 IdentifierProducer is a type class for producing unique identifiers for types, labels or identifiers.
@@ -77,10 +86,12 @@ inductive CVarScope : (List (Type u)) -> Type (u+1) where
   | nil : CVarScope []
   | cons {τs : List (Type u)} (τ : Type u ) [IsCType τ] (_ :CVarScope τs)  : CVarScope (τ :: τs)
 
+
 example := CVarScope.nil
 inductive CFuncArgVarScope : (List (Type u)) -> Type (u+1) where
   | nil : CFuncArgVarScope []
   | cons {τs : List (Type u)} (τ : Type u ) [IsCFuncArgType τ] (_ :CFuncArgVarScope τs)  : CFuncArgVarScope (τ :: τs)
+
 
 /--
 we want flexible size types, so we defne it as class -/
@@ -88,34 +99,6 @@ class CTypeSize (α : Type u) where
   sizeOf : α -> Nat
   alignOf : α -> Nat
   type_str : α -> String
-
-/-- Integer sizes -/
-inductive CIntSize where
-  | i8
-  | i16
-  | i32
-  | i64
-  | i128
-
-instance : CTypeSize CIntSize where
-  sizeOf
-    | CIntSize.i8   => 1
-    | CIntSize.i16  => 2
-    | CIntSize.i32  => 4
-    | CIntSize.i64  => 8
-    | CIntSize.i128 => 16
-  alignOf
-    | CIntSize.i8   => 1
-    | CIntSize.i16  => 2
-    | CIntSize.i32  => 4
-    | CIntSize.i64  => 8
-    | CIntSize.i128 => 16
-  type_str
-    | .i8 => "int8_t"
-    | .i16 => "int16_t"
-    | .i32 => "int32_t"
-    | .i64 => "int64_t"
-    | .i128 => "int128_t"
 
 inductive CFloatSize where
   | F16
@@ -138,33 +121,40 @@ instance : CTypeSize CFloatSize where
 
 class CTypeQualification (α : Type u) where
   isCTypeQualification : Prop
+instance {α :Type u} [IsCFuncArgType α] : IsCFuncArgType (CTypeQualification α) where
+  isCFuncArgType := True
 
-
-inductive CTypeQualificationNone where
-| mk : CTypeQualificationNone
-instance : CTypeQualification CTypeQualificationNone where
+inductive CTypeQualificationNone (α:Type u) [IsCType α] where
+| mk : CTypeQualificationNone α
+instance (α:Type u) [IsCType α] : CTypeQualification (CTypeQualificationNone α) where
   isCTypeQualification := True
 
-inductive CTypeQualificationConst where
-  | Const
-instance : CTypeQualification CTypeQualificationConst where
-  isCTypeQualification := True
+inductive CTypeQualificationConst  (α : Type u) [IsCType α] where
+  | mk
 
 inductive CTypeQualificationVolatile where
-  | Volatile
+  | mk
 instance : CTypeQualification CTypeQualificationVolatile where
   isCTypeQualification := True
 
 inductive CTypeQualificationRestrict where
-  | Restrict
+  | mk
 instance : CTypeQualification CTypeQualificationRestrict where
   isCTypeQualification := True
 
 
+inductive CQualifiedType (α : Type u) [IsCFuncArgType α] (β  : Type) [CTypeQualification β] where
+  | mk : CQualifiedType α β
+instance (α : Type u) [IsCFuncArgType α] {β  :Type} [CTypeQualification β]  : IsCType (CQualifiedType α β) where
+  isCType := True
+
+instance {α :Type u} [IsCFuncArgType α] (β  : Type) [CTypeQualification β] : IsCFuncArgType (CQualifiedType α β) where
+  isCFuncArgType := True
+
 /-- Void type -/
-inductive CVoidType (α : Type)  where
-  | mk : CVoidType α
-instance {α :Type} [CTypeQualification α] : IsCType (CVoidType α) where
+inductive CVoidType  where
+  | mk : CVoidType
+instance : IsCType CVoidType where
   isCType := True
 
 /-- Void type (α - type qualification) -/
@@ -173,45 +163,115 @@ inductive CCharType (α : Type) [CTypeQualification α]  where
 instance {α :Type} [CTypeQualification α] : IsCType (CCharType α) where
   isCType := True
 instance {α :Type} [CTypeQualification α] : IsCFuncArgType (CCharType α) where
-  isCType := True
+  isCFuncArgType := True
 instance {α :Type} [CTypeQualification α] : CTypeSize (CCharType α) where
   sizeOf _ := 1
   alignOf _ := 1
   type_str _ := "char"
 
 /-- CTypedef represents a C typedef definition. -/
-inductive CTypedef (α:Type u) [IsCType α] (β  : Type) [CTypeQualification β]   where
-  | mk : CTypedef α β
-instance (α : Type u) [IsCType α] {β  :Type} [CTypeQualification β]  : IsCType (CTypedef α β) where
-  isCType := True
-instance (α : Type u) [IsCType α] {β  :Type} [CTypeQualification β] : IsCFuncArgType (CTypedef α β) where
-  isCType := True
+inductive CTypedef (α:Type u) [IsCType α]   where
+  | mk : CTypedef α
+instance (α : Type u) [IsCType α] : IsCFuncArgType (CTypedef α) where
+  isCFuncArgType := True
 
 
 inductive CIntType (sz : CIntSize) (sgn : Bool) (β  : Type) [CTypeQualification β] where
 | mk : CIntType sz sgn β
-instance (sz : CIntSize) (sgn : Bool) {β  :Type} [CTypeQualification β] : IsCType (CIntType sz sgn β) where
-  isCType := True
 instance (sz : CIntSize) (sgn : Bool) {β  :Type} [CTypeQualification β] : IsCFuncArgType (CIntType sz sgn β) where
-  isCType := True
+  isCFuncArgType := True
 
-inductive CFloatType (sz : CFloatSize) (β  : Type) [CTypeQualification β] where
-| mk : CFloatType sz β
-instance (sz : CFloatSize) {β  :Type} [CTypeQualification β] : IsCType (CFloatType sz β) where
+inductive CUInt8Type where
+| mk : CUInt8Type
+instance : IsCType CUInt8Type where
   isCType := True
-instance (sz : CFloatSize) {β  :Type} [CTypeQualification β] : IsCFuncArgType (CFloatType sz β) where
+instance : IsCFuncArgType CUInt8Type where
+  isCFuncArgType := True
+instance : CSizeOf CUInt8Type where
+  size_of := 1
+
+inductive CUInt16Type where
+| mk : CUInt16Type
+instance : IsCType CUInt16Type where
   isCType := True
+instance : IsCFuncArgType CUInt16Type where
+  isCFuncArgType := True
+instance : CSizeOf CUInt16Type where
+  size_of := 2
+
+inductive CUInt32Type where
+| mk : CUInt32Type
+instance : IsCType CUInt32Type where
+  isCType := True
+instance : IsCFuncArgType CUInt32Type where
+  isCFuncArgType := True
+instance : CSizeOf CUInt32Type where
+  size_of := 4
+
+inductive CUInt64Type where
+| mk : CUInt64Type
+instance : IsCType CUInt64Type where
+  isCType := True
+instance : IsCFuncArgType CUInt64Type where
+  isCFuncArgType := True
+instance : CSizeOf CUInt64Type where
+  size_of := 8
+
+
+inductive CInt8Type where
+| mk : CInt8Type
+instance : IsCType CInt8Type where
+  isCType := True
+instance : IsCFuncArgType CInt8Type where
+  isCFuncArgType := True
+instance : CSizeOf CInt8Type where
+  size_of := 1
+
+inductive CInt16Type where
+| mk : CInt16Type
+instance : IsCType CInt16Type where
+  isCType := True
+instance : IsCFuncArgType CInt16Type where
+  isCFuncArgType := True
+instance : CSizeOf CUInt16Type where
+  size_of := 2
+
+inductive CInt32Type where
+| mk : CInt32Type
+instance : IsCType CInt32Type where
+  isCType := True
+instance : IsCFuncArgType CInt32Type where
+  isCFuncArgType := True
+instance : CSizeOf CUInt32Type where
+  size_of := 4
+
+inductive CInt64Type where
+| mk : CInt64Type
+instance : IsCType CInt64Type where
+  isCType := True
+instance : IsCFuncArgType CInt64Type where
+  isCFuncArgType := True
+instance : CSizeOf CUInt64Type where
+  size_of := 8
+
+
+inductive CFloatType (sz : CFloatSize) where
+| mk : CFloatType sz
+instance (sz : CFloatSize) : IsCType (CFloatType sz) where
+  isCType := True
+instance (sz : CFloatSize) : IsCFuncArgType (CFloatType sz) where
+  isCFuncArgType := True
 
 /-- CPointer_t represents a C pointer type.
 There is no restriction to what pointer type can point to.
 -/
-inductive CPointer_t (α : Type u) [IsCType α] (β  : Type) [CTypeQualification β] where
-  | mk : CPointer_t α β
-instance (α : Type u) [IsCType α] {β  :Type} [CTypeQualification β] : IsCType (CPointer_t α β) where
+inductive CPointer_t (α : Type u) [IsCType α] where
+  | mk : CPointer_t α
+instance (α : Type u) [IsCType α] : IsCType (CPointer_t α) where
   isCType := True
 
-instance (α : Type u) [IsCType α] {β  :Type} [CTypeQualification β] : IsCFuncArgType (CPointer_t α β) where
-  isCType := True
+instance (α : Type u) [IsCType α] : IsCFuncArgType (CPointer_t α) where
+  isCFuncArgType := True
 
 
 /-- CArray_t represents a C array type.
@@ -220,12 +280,12 @@ CArray has element type and size. It is usually stack allocated, when declared.
 However we can define a pointer to an array type as well. This can be in heap, but we indicate that
 each array has fixed size.
 -/
-inductive CArray_t (α : Type u) [IsCType α] (β  : Type) [CTypeQualification β] where
-  | mk : Nat → CArray_t α β
-instance (α : Type u) [IsCType α] {β  :Type} [CTypeQualification β] : IsCType (CArray_t α β) where
+inductive CArray_t (α : Type u) [IsCType α] where
+  | mk : Nat → CArray_t α
+instance (α : Type u) [IsCType α] : IsCType (CArray_t α) where
   isCType := True
-instance (α : Type u) [IsCType α] {β  :Type} [CTypeQualification β] : IsCFuncArgType (CArray_t α β) where
-  isCType := True
+instance (α : Type u) [IsCType α] : IsCFuncArgType (CArray_t α) where
+  isCFuncArgType := True
 
 
 /-- we need to build scope together with the type
@@ -242,23 +302,31 @@ instance : IdentifierProducer CTrivialLabelScopeProducer Nat where
   can_produce _ := True
   are_identifiers_unique _ := True
 
-inductive CStructType (β:Type) (α:Type) [IdentifierProducer β  α ] (γ : Type) [CTypeQualification γ] where
-  | mk  (τ : CVarScope δ) : CStructType β α γ
-instance (β:Type) (α:Type) [IdentifierProducer β  α ] (γ : Type) [CTypeQualification γ] : IsCType (CStructType β α γ) where
-  isCType := True
-instance (β:Type) (α:Type) [IdentifierProducer β  α ] (γ : Type) [CTypeQualification γ] : IsCFuncArgType (CStructType β α γ) where
-  isCType := True
-
-inductive CUnionType (β:Type) (α:Type) [IdentifierProducer β  α ]  (γ : Type) [CTypeQualification γ] where
-  | mk : CVarScope δ → CUnionType β α γ
-instance (β:Type) (α:Type) [IdentifierProducer β  α ] (γ : Type) [CTypeQualification γ] : IsCType (CUnionType β α γ) where
-  isCType := True
-instance (β:Type) (α:Type) [IdentifierProducer β  α ] (γ : Type) [CTypeQualification γ] : IsCFuncArgType (CUnionType β α γ) where
-  isCType := True
+inductive CStructScope : (List (Type u)) -> Type (u+1) where
+  | nil : CStructScope []
+  | cons {τs : List (Type u)} (τ : Type u ) [IsCType τ] (_ :CStructScope τs)  : CStructScope (τ :: τs)
+  | bitfield {τs : List (Type u)} (storage_type : Type u) [IsIntegerType storage_type] [CSizeOf storage_type] (size : Nat) (_:size <= (CSizeOf.size_of storage_type)) (_ :CStructScope τs)  : CStructScope (storage_type :: τs)
 
 
-example : CStructType CTrivialLabelScopeProducer Nat CTypeQualificationNone := CStructType.mk (CVarScope.cons (CIntType .i32 true CTypeQualificationNone) (CVarScope.cons (CVoidType CTypeQualificationNone) CVarScope.nil) )
+inductive CStructType (β:Type) (α:Type) [IdentifierProducer β  α ] (γ:CVarScope δ) where
+  | mk : CStructType β α γ
+instance (β:Type) (α:Type) [IdentifierProducer β  α ] : IsCType (CStructType β α γ) where
+  isCType := True
+instance (β:Type) (α:Type) [IdentifierProducer β  α ] : IsCFuncArgType (CStructType β α γ) where
+  isCFuncArgType := True
 
+inductive CUnionType (β:Type) (α:Type) [IdentifierProducer β  α ] where
+  | mk : CVarScope δ → CUnionType β α
+instance (β:Type) (α:Type) [IdentifierProducer β  α ] : IsCType (CUnionType β α) where
+  isCType := True
+instance (β:Type) (α:Type) [IdentifierProducer β  α ] : IsCFuncArgType (CUnionType β α) where
+  isCFuncArgType := True
+
+
+example : CStructType CTrivialLabelScopeProducer Nat (CVarScope.cons (CUInt32Type) (CVarScope.cons (CVoidType ) CVarScope.nil) ) := CStructType.mk
+example: Prop :=
+  let st := CStructType CTrivialLabelScopeProducer Nat (CVarScope.cons (CUInt32Type) (CVarScope.cons (CVoidType ) CVarScope.nil) )
+  IsCFuncArgType.isCFuncArgType st
 
 /-- CFunction represents a C function type.
 
@@ -272,14 +340,15 @@ instance (arg_types : CFuncArgVarScope γ) (elipses : Bool) (ret_type : Type u) 
     IsCType (CFunctionType arg_types elipses ret_type) where
   isCType := True
 
-example : CFunctionType (CFuncArgVarScope.cons (CIntType .i32 true CTypeQualificationNone) (CFuncArgVarScope.cons (CFloatType .F64 CTypeQualificationNone) CFuncArgVarScope.nil)) false (CVoidType CTypeQualificationNone) :=
+example := CFuncArgVarScope.cons (CQualifiedType CInt32Type CTypeQualificationVolatile) (CFuncArgVarScope.cons (CFloatType .F64) CFuncArgVarScope.nil)
+example : CFunctionType (CFuncArgVarScope.cons (CQualifiedType CInt32Type CTypeQualificationVolatile) (CFuncArgVarScope.cons (CFloatType .F64) CFuncArgVarScope.nil)) false (CVoidType ) :=
   CFunctionType.mk
 
 example :=
-  let args := CFuncArgVarScope.cons (CIntType .i32 true CTypeQualificationNone)
-              (CFuncArgVarScope.cons (CFloatType .F64 CTypeQualificationNone)
+  let args := CFuncArgVarScope.cons CInt32Type
+              (CFuncArgVarScope.cons (CFloatType .F64)
               CFuncArgVarScope.nil)
-  let ret := CVoidType CTypeQualificationNone
+  let ret := CVoidType
   (CFunctionType.mk : CFunctionType args false ret )
 
 
