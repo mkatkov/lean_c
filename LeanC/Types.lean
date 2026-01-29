@@ -46,14 +46,15 @@ universe u
 class CProgramContext where
   is_context := True
 
-class IsCStructType (α : Type u) where
-  /-- Proof that the type α is a C type allowed in structure -/
-  isCStructType : Prop
 /-- IsCType is a type class for distinguishing C types from other types. -/
-class IsCType (α : Type u) extends IsCStructType (α : Type u) where
+class IsCType (α : Type u) where
   /-- Proof that the type α is a C type -/
   isCType : Prop
-  isCStructType := isCType
+class IsVoidCType (α : Type u) where
+  /-- Proof that the type α is a C type -/
+  isVoidCType : Prop
+instance {α:Type u}: IsVoidCType α where
+  isVoidCType := False
 
 class IsCFuncArgType (α : Type u) where
   /-- Proof that the type α is a C type -/
@@ -98,8 +99,6 @@ example := CVarScope.nil
 inductive CFuncArgVarScope : (List (Type u)) -> Type (u+1) where
   | nil : CFuncArgVarScope []
   | cons {τs : List (Type u)} (τ : Type u ) [IsCFuncArgType τ] (_ :CFuncArgVarScope τs)  : CFuncArgVarScope (τ :: τs)
-
-
 
 inductive CIntSize where
 | I8
@@ -163,6 +162,8 @@ inductive CVoidType  where
   | mk : CVoidType
 instance : IsCType CVoidType where
   isCType := True
+instance : IsVoidCType CVoidType where
+  isVoidCType := True
 
 /-- Void type (α - type qualification) -/
 inductive CCharType (α : Type) [CTypeQualification α]  where
@@ -250,7 +251,10 @@ instance : IdentifierProducer CTrivialLabelScopeProducer Nat where
 
 inductive CStructType : (List (Type u)) -> Type (u+1) where
   | nil : CStructType []
-  | cons {τs : List (Type u)} (τ : Type u ) [IsCType τ] (_: CStructType τs ): CStructType (τ :: τs)
+  | cons {τs : List (Type u)}
+     (τ : Type u ) [IsCType τ] [IsVoidCType τ]
+     (_: CStructType τs )
+     (not_void : ¬ (IsVoidCType.isVoidCType τ) ): CStructType (τ :: τs)
   | bitfield {τs : List (Type u)} {α :Type u} [CTypeSize α] [IsIntegerType α ] (size : Nat) (storage_type : α ) ( can_store : size <= 8*(CTypeSize.size_of storage_type))   : CStructType ( α :: τs)
 
 instance {α : List Type}: IsCType (CStructType α) where
@@ -258,9 +262,9 @@ instance {α : List Type}: IsCType (CStructType α) where
 instance {α : List Type}: IsCFuncArgType (CStructType α)  where
   isCFuncArgType := True
 
-example :CStructType [CUInt32Type] := CStructType.cons CUInt32Type CStructType.nil
-/- nexte example should fail-/
-example :CStructType [CVoidType, CUInt32Type] := CStructType.cons CVoidType (CStructType.cons CUInt32Type CStructType.nil)
+example :CStructType [CUInt32Type] := CStructType.cons CUInt32Type CStructType.nil (by simp [IsVoidCType.isVoidCType];  )
+/- next  example should fail -> we can prove it is false -/
+-- example :CStructType [CVoidType, CUInt32Type] := CStructType.cons CVoidType (CStructType.cons CUInt32Type CStructType.nil (by simp [IsVoidCType.isVoidCType]; ) ) (by simp [IsVoidCType.isVoidCType]; decide; )
 example := IsCFuncArgType.isCFuncArgType (CStructType [CUInt32Type, CVoidType])
 
 inductive CUnionType (α: List Type) where
