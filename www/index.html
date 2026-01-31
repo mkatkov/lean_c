@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>lean_c — Verified Lean4 to C</title>
+			<meta name="description" content="lean_c defines Lean-level objects and relationships to generate portable C and to express machine-checkable proofs about code transformations and properties." />
+		<style>
+			:root {
+				--bg: #0b0d12;
+				--card: #121622;
+				--text: #e8ecf1;
+				--muted: #9aa7b6;
+				--accent: #4da3ff;
+				--ok: #48c78e;
+				--warn: #ffd66e;
+				--danger: #ff6b6b;
+			}
+			html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial, "Apple Color Emoji", "Segoe UI Emoji"; }
+			a { color: var(--accent); text-decoration: none; }
+			a:hover { text-decoration: underline; }
+			header { padding: 48px 24px 16px; text-align: center; }
+			header h1 { font-size: 2rem; margin: 0; }
+			header p { color: var(--muted); margin-top: 8px; }
+			nav { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; padding: 8px 24px 24px; }
+			nav a { background: var(--card); padding: 8px 12px; border-radius: 8px; }
+			main { max-width: 980px; margin: 0 auto; padding: 0 24px 48px; }
+			section { background: var(--card); margin: 16px 0; padding: 20px; border-radius: 12px; }
+			section h2 { margin: 0 0 8px; font-size: 1.25rem; }
+			section p, section ul { color: var(--text); }
+			.muted { color: var(--muted); }
+			.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+			.badge { display: inline-block; padding: 4px 8px; border-radius: 999px; font-size: 0.85rem; background: #182034; color: var(--muted); }
+			.todo { border-left: 4px solid var(--warn); padding-left: 12px; margin-top: 8px; color: var(--warn); }
+			code, pre { background: #0d1019; color: #e6edf3; border-radius: 8px; }
+			pre { padding: 12px; overflow: auto; }
+			footer { text-align: center; color: var(--muted); padding: 24px; }
+		</style>
+	</head>
+	<body>
+		<header>
+			<h1>lean_c</h1>
+			<p><a href="https://lean-lang.org/" > Lean-based</a> framework to generate portable <a href="https://en.wikipedia.org/wiki/C_(programming_language)">C</a> and enable machine-checked code manipulation.</p>
+			<div style="margin-top:8px">
+				<span class="badge">Early-stage</span>
+				<span class="badge">Research + Engineering</span>
+				<span class="badge">Open Source</span>
+			</div>
+		</header>
+
+		<nav>
+			<a href="#overview">Overview</a>
+			<a href="#motivation">Motivation</a>
+            <a href="#goal">Project goals and scope</a>
+			<a href="#approach">Technical Approach</a>
+			<a href="#guarantees">Guarantees & Scope</a>
+			<a href="#status">Current Status</a>
+			<a href="#roadmap">Roadmap</a>
+			<a href="#sponsorship">Fiscal Sponsorship</a>
+			<a href="#funds">Use of Funds</a>
+			<a href="#team">Team & Governance</a>
+			<a href="#license">Open Source & License</a>
+			<a href="#contact">Sponsors & Contact</a>
+			<a href="#links">Links & References</a>
+		</nav>
+
+		<main>
+			<section id="overview">
+				<h2>Project Overview</h2>
+				<p>lean_c is a research and engineering project focused on defining Lean-level objects and relationships (theorems) that can be used to generate portable C code and to express machine-checkable proofs about code transformations and properties. The aim is to enable generation of small, predictable C suitable for resource-constrained environments while providing formal Lean constructions to reason about the produced code.</p>
+				<p class="muted">Source docs: <a href="https://github.com/mkatkov/lean_c/blob/HEAD/README.md" target="_blank" rel="noopener">README.md</a>, <a href="https://github.com/mkatkov/lean_c/blob/HEAD/doc/roadmap.md" target="_blank" rel="noopener">doc/roadmap.md</a>, <a href="https://github.com/mkatkov/lean_c/blob/HEAD/doc/ideas.md" target="_blank" rel="noopener">doc/ideas.md</a></p>
+				<div class="grid">
+					<section>
+						<h2 style="font-size:1rem">Key Benefits</h2>
+						<ul>
+							<li>Portable C output with minimal runtime dependencies.</li>
+							<li>Path toward machine-checked guarantees (safety, correctness).</li>
+							<li>Small binaries suitable for embedded and constrained targets.</li>
+						</ul>
+					</section>
+					<section>
+						<h2 style="font-size:1rem">Explicit Non‑Goals</h2>
+						<ul>
+							<li>Full Lean 4 → full C99 coverage.</li>
+							<li>Heavy OS runtime or GC dependency.</li>
+							<li>Replacing verified compilers like CompCert; interoperate conceptually.</li>
+						</ul>
+					</section>
+				</div>
+            </section>
+
+			<section id="motivation">
+				<h2>Motivation</h2>
+                <ul>
+                    <li> Lean 4 is excellent for writing verified programs and proofs. </li>
+					<li> However, produced binaries are large, making deployment in constrained or embedded environments difficult.</li>
+					<li>C remains the most widely supported systems language, especially where binary size, predictability, and platform support matter. Moreover, it is relatively easy to implement for new platforms compared to higher-level languages.</li>
+                    <li>There is currently no practical, proof-aware pipeline from high level abstractions to low-level C code.</li>
+					<li>Bridging the two enables <b>formally verified</b> small, fast, and correct <b>low-level software</b>.</li>
+                </ul>
+            </section>            
+
+			<section id="goal">
+				<h2>Project goals and scope</h2>
+                <ul>
+                    <li>Define a Lean-level intermediate representation of a program module.</li>
+					<li>Provide implementation of basic data structures, such as containers, lists, maps, stacks, queues, and heaps.</li>
+					<li>Produce a small, provably correct library for operations on basic datatypes.</li>
+                </ul>
+            </section>
+            
+            
+			<section id="approach">
+				<h2>Technical Approach</h2>
+                <ul>
+                    <li>Target a small, well-specified C subset, like Clight. This reduces the effort, still providing working programs. Combined with CompCert this will produce provably correct compiled executable for critical applications.</li>
+                    <li>Define a Lean-level intermediate representation suitable for formal proofs</li>
+					<li>Proofs are broken into several categories:
+						<ul>
+							<li>Correctness of C syntax — allows defining a smaller subset of syntactic elements bound by usage rules.</li>
+							<li>Type preservation/transformation — modern programming requires clear typing; here we use strong typing.</li>
+							<li>Memory safety — prevents access to memory belonging to the system or other programs.</li>
+							<li>Resource bounds — guarantees about memory and other resource usage for a given algorithm.</li>
+							<li>Runtime bounds — complexity classes for execution time. Multithreading proofs aim for Rust-like guarantees while targeting simpler-to-implement C.</li>
+							<li>Absence of undefined behavior.</li>
+						</ul>
+					</li>
+                    <li>Once formal proofs of the above are provided generate readable, portable C code that can be compiled by standard toolchains, including CompCert.</li>
+                </ul>
+            </section>
+
+			<section id="guarantees">
+				<h2>Guarantees & Scope</h2>
+				<ul>
+					<li><b>Scope:</b> small, well-defined C subset (e.g., Clight) with portable output.</li>
+					<li><b>Formal guarantees:</b> syntax correctness, type preservation, memory safety, resource and runtime bounds, and absence of undefined behavior.</li>
+					<li><b>Non‑goals:</b> full Lean 4 → full C99 coverage; heavy OS runtime or GC; replacing verified compilers (aim to interoperate with CompCert).</li>
+				</ul>
+			</section>
+
+            <section id="status">
+				<h2>Current Status</h2>
+				<ul>
+					<li>Early-stage prototype; Lean modules under development (Types, Expr, Values, etc.).</li>
+					<li>Formal correctness proofs in progress; design docs available.</li>
+				</ul>
+			</section>
+
+			<section id="roadmap">
+				<h2>Roadmap & Milestones</h2>
+				<div class="grid">
+					<section>
+						<h2 style="font-size:1rem">Milestone 1</h2>
+                        Define a Lean-level intermediate representation for type and value constructions
+						<ul>
+							<li>C types</li>
+							<li>Memory Block types, like Array, Slice.</li>
+							<li>Create a literal representations, like strings, numbers.</li>
+                            <li>Provide a set of theorems/definitions about correctness of C lexems usage.</li>
+						</ul>
+					</section>
+					<section>
+						<h2 style="font-size:1rem">Milestone 2</h2>
+                        Define a Lean-level intermediate representation for expression/statement semantics.
+						<ul>
+							<li>Introduce types suitable for theorem statements.</li>
+							<li>Theorems and Proofs: type preservation/transformation, memory safety, runtime bounds.</li>
+						</ul>
+					</section>
+					<section>
+						<h2 style="font-size:1rem">Milestone 3</h2>
+                        Define a Lean-level intermediate representation for functions and modules
+						<ul>
+							<li>Theorems required for memory safety and resources used by functions.</li>
+							<li>Module generation in actual C.</li>
+						</ul>
+					</section>
+					<section>
+						<h2 style="font-size:1rem">Milestone 4</h2>
+                        Implementation of basic data structures, like container, list, map, stack, queue, heap
+						<ul>
+							<li>Theorems proving implementation for basic data structures.</li>
+							<li>Generation and validation of C code for basic structures.</li>
+							<li>Performance/cost model for selected algorithms — design a complexity classes representation beyond simple ProgramTerminates.</li>
+						</ul>
+					</section>
+				</div>
+				<p class="muted">Detailed roadmap: <a href="https://github.com/mkatkov/lean_c/blob/HEAD/doc/roadmap.md">doc/roadmap.md</a></p>
+			</section>
+
+			<section id="sponsorship">
+				<h2>Fiscal Sponsorship Readiness</h2>
+				<ul>
+					<li><strong>Public benefit:</strong> open-source, educational, and research value.</li>
+					<li><strong>Governance:</strong> transparent process; Code of Conduct and contributing guidelines published.</li>
+					<li><strong>Use of funds:</strong> documented; roadmap and deliverables defined.</li>
+					<li><strong>Prospectus & budget:</strong> see sponsorship document with sponsor-facing details (target $100K).</li>
+					<li><strong>COI Policy:</strong> short-form published; see document below.</li>
+				</ul>
+				<p class="muted">Prospectus: <a href="https://github.com/mkatkov/lean_c/blob/HEAD/doc/sponsorship.md" target="_blank" rel="noopener">doc/sponsorship.md</a> · COI: <a href="https://github.com/mkatkov/lean_c/blob/HEAD/doc/coi.md" target="_blank" rel="noopener">doc/coi.md</a></p>
+			</section>
+
+			<section id="funds">
+				<h2>Use of Funds</h2>
+				<ul>
+					<li>Developer time (design, implementation, integration).</li>
+					<li>Proof engineering and verification work.</li>
+					<li>Documentation, examples, and tutorials.</li>
+					<li>CI infrastructure and tooling.</li>
+				</ul>
+			</section>
+
+			<section id="team">
+				<h2>Team & Governance</h2>
+				<ul>
+					<li><strong>Responsible maintainer:</strong> <span class="muted"><a href="mailto:mikhail.katkov@gmail.com">Mikhail Katkov</a>, <a href="https://www.weizmann.ac.il/Staff_Scientists/mikhail-katkov">Weizmann Institute of Science</a>, Rehovot, Israel, <a href="https://github.com/mkatkov">GitHub</a>, <a href="https://scholar.google.com/citations?user=CvO16b8AAAAJ&hl=en">Google Scholar</a>, <a href="https://www.ias.edu/scholars/mikhail-katkov">IAS</a> .</span></li>
+					  <li><strong>Governance:</strong> transparent, open-source development; decisions are discussed in <a href="https://github.com/mkatkov/lean_c/issues" target="_blank" rel="noopener">GitHub Issues</a> and recorded in <a href="https://github.com/mkatkov/lean_c/blob/HEAD/doc/modules.md" target="_blank" rel="noopener">doc/modules.md</a>.</li>
+					<li><strong>Contributions:</strong> public issues/PRs; respectful, review-driven process; see <a href="https://github.com/mkatkov/lean_c/blob/HEAD/CONTRIBUTING.md" target="_blank" rel="noopener">CONTRIBUTING.md</a> and <a href="https://github.com/mkatkov/lean_c/blob/HEAD/CODE_OF_CONDUCT.md" target="_blank" rel="noopener">CODE_OF_CONDUCT.md</a>.</li>
+				</ul>
+			</section>
+
+			<section id="license">
+				<h2>Open Source & License</h2>
+				<ul>
+					  <li><strong>License:</strong> <span class="muted">Apache‑2.0</span> — see <a href="https://github.com/mkatkov/lean_c/blob/HEAD/LICENSE.txt" target="_blank" rel="noopener">LICENSE.txt</a>.</li>
+					  <li><strong>Repository:</strong> <a href="https://github.com/mkatkov/lean_c" target="_blank" rel="noopener">github.com/mkatkov/lean_c</a></li>
+					  <li><strong>Docs:</strong> overview <a href="https://github.com/mkatkov/lean_c/blob/HEAD/README.md" target="_blank" rel="noopener">README.md</a>, roadmap <a href="https://github.com/mkatkov/lean_c/blob/HEAD/doc/roadmap.md" target="_blank" rel="noopener">doc/roadmap.md</a>, ideas <a href="https://github.com/mkatkov/lean_c/blob/HEAD/doc/ideas.md" target="_blank" rel="noopener">doc/ideas.md</a>.</li>
+				</ul>
+			</section>
+
+			<section id="contact">
+				<h2>Sponsors & Contact</h2>
+				<ul>
+					<li><strong>Contact:</strong> <span class="muted"><a href="mailto:mikhail.katkov@gmail.com">Mikhail Katkov</a>.</span></li>
+					<li><strong>Issues:</strong> <a href="https://github.com/mkatkov/lean_c/issues" target="_blank" rel="noopener">GitHub Issues</a></li>
+					<li><strong>Sponsorship:</strong> funds are directed to development, verification, documentation, and CI.</li>
+					<li><strong>Review materials:</strong> design docs and tests within the repository; references below.</li>
+				</ul>
+			</section>
+
+			<section id="links">
+				<h2>Links & References</h2>
+				<ul>
+					<li><a href="https://github.com/mkatkov/lean_c" target="_blank" rel="noopener">Project repository</a></li>
+					<li><a href="https://github.com/mkatkov/lean_c/blob/HEAD/README.md" target="_blank" rel="noopener">Project README</a></li>
+					<li><a href="https://github.com/mkatkov/lean_c/blob/HEAD/doc/roadmap.md" target="_blank" rel="noopener">Roadmap</a></li>
+					<li><a href="https://github.com/mkatkov/lean_c/blob/HEAD/doc/ideas.md" target="_blank" rel="noopener">Ideas & notes</a></li>
+					<li><a href="https://xavierleroy.org/publi/Clight.pdf" target="_blank" rel="noopener">CompCert Clight</a></li>
+					<li><a href="https://lean-lang.org/" target="_blank" rel="noopener">Lean 4 documentation</a></li>
+				</ul>
+			</section>
+
+			
+</main>
+</body> 
+</html>
