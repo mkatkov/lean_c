@@ -13,6 +13,4 @@ inductive TypedValue (α : Type) [IsCType α] (β :Type) ( v : β) ( can_cast : 
 instance {α : Type} [IsCType α] {β :Type} {v : β} ( can_cast : β -> α -> Prop ) : IsCType (TypedValue α β v can_cast) where
   isCType := True
 
-theorem (n:Nat) CIntType
-
 end LeanC

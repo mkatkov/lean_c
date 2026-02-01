@@ -72,6 +72,9 @@ class CTypeSize (α : Type u) where
 IdentifierProducer is a type class for producing unique identifiers for types, labels or identifiers.
 α is producer flavor type
 β is scope type - by abuse of notation it is also identifier
+
+
+----- IT should actually be not here -------
 -/
 
 class IdentifierProducer (α : Type u)  (β :Type v) where
@@ -93,7 +96,6 @@ def CLabelScope := Nat
 inductive CVarScope : (List (Type u)) -> Type (u+1) where
   | nil : CVarScope []
   | cons {τs : List (Type u)} (τ : Type u ) [IsCType τ] : CVarScope (τ :: τs)
-
 
 example := CVarScope.nil
 inductive CFuncArgVarScope : (List (Type u)) -> Type (u+1) where
@@ -235,7 +237,7 @@ instance (α : Type u) [IsCType α] : IsCFuncArgType (CArray_t α) where
   isCFuncArgType := True
 
 
-/-- we need to build scope together with the type
+/- - we need to build scope together with the type
 since for the struct to be usefull we need to be able to acces it
 By the contract the first item in the scope is a type that can produce all identifiers in this scope.
 
@@ -243,11 +245,11 @@ The first list is a list of identifier producers for argument types having ident
 The rest is just CTypes.
 -/
 
-def CTrivialLabelScopeProducer := Unit
-instance : IdentifierProducer CTrivialLabelScopeProducer Nat where
-  produce_identifier val stream := stream.putStr s!"id_{val}"
-  can_produce _ := True
-  are_identifiers_unique _ := True
+-- def CTrivialLabelScopeProducer := Unit
+-- instance : IdentifierProducer CTrivialLabelScopeProducer Nat where
+--   produce_identifier val stream := stream.putStr s!"id_{val}"
+--   can_produce _ := True
+--   are_identifiers_unique _ := True
 
 inductive CStructType : (List (Type u)) -> Type (u+1) where
   | nil : CStructType []
