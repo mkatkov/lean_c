@@ -1,12 +1,9 @@
-import LeanC.Prod
--- import LeanC.Scope
-
 /-!
 # C Type System for lean_c
 
 This module defines the core C type system including:
 - Basic types (integers, floats, void)
-- Composite types (pointers, arrays, structs, unions, functions)
+- Composite types (pointers, structs, unions, functions)
 - Type size and alignment calculations
 - Type resolution and code generation framework
 
@@ -68,27 +65,13 @@ class IsIntegerType (α : Type u) where
 class CTypeSize (α : Type u) where
   size_of : α -> Nat
 
-/--
-IdentifierProducer is a type class for producing unique identifiers for types, labels or identifiers.
-α is producer flavor type
-β is scope type - by abuse of notation it is also identifier
-
-
------ IT should actually be not here -------
--/
-
-class IdentifierProducer (α : Type u)  (β :Type v) where
-  produce_identifier : (x:β) → IO.FS.Stream → EIO IO.Error Unit
-  can_produce : (x:β) → Prop
-  are_identifiers_unique : (x : β) → Prop
-
 /-- CLabelScope represents the scope of labels in C.
 labels appear inside function and this would be function scope
 But also types have CLabelScope. For instance typedefs can define type labels.
 The distinctive feature these scopes do not have types associated with them.
 They are resolved with names only.
 
-The only requirements we have is that we can produce unique identifiers for labels.
+The only requirements we have is that we can produce unique identifiers for labels within the scope.
 -/
 def CLabelScope := Nat
 
@@ -98,9 +81,11 @@ inductive CVarScope : (List (Type u)) -> Type (u+1) where
   | cons {τs : List (Type u)} (τ : Type u ) [IsCType τ] : CVarScope (τ :: τs)
 
 example := CVarScope.nil
+
 inductive CFuncArgVarScope : (List (Type u)) -> Type (u+1) where
   | nil : CFuncArgVarScope []
-  | cons {τs : List (Type u)} (τ : Type u ) [IsCFuncArgType τ] (_ :CFuncArgVarScope τs)  : CFuncArgVarScope (τ :: τs)
+  | cons {τs : List (Type u)} (τ : Type u ) [IsCFuncArgType τ]
+    (_ :CFuncArgVarScope τs)  (not_void : ¬ (IsVoidCType.isVoidCType τ) ) : CFuncArgVarScope (τ :: τs)
 
 inductive CIntSize where
 | I8
@@ -214,42 +199,12 @@ instance (sz : CFloatSize) : IsCFuncArgType (CFloatType sz) where
 /-- CPointer_t represents a C pointer type.
 There is no restriction to what pointer type can point to.
 -/
-inductive CPointer_t (α : Type u) [IsCType α] where
-  | mk : CPointer_t α
-instance (α : Type u) [IsCType α] : IsCType (CPointer_t α) where
+inductive CPointerType (α : Type u) [IsCType α] where
+  | mk : CPointerType α
+instance (α : Type u) [IsCType α] : IsCType (CPointerType α) where
   isCType := True
-
-instance (α : Type u) [IsCType α] : IsCFuncArgType (CPointer_t α) where
+instance (α : Type u) [IsCType α] : IsCFuncArgType (CPointerType α) where
   isCFuncArgType := True
-
-
-/-- CArray_t represents a C array type.
-
-CArray has element type and size. It is usually stack allocated, when declared.
-However we can define a pointer to an array type as well. This can be in heap, but we indicate that
-each array has fixed size.
--/
-inductive CArray_t (α : Type u) [IsCType α] where
-  | mk : Nat → CArray_t α
-instance (α : Type u) [IsCType α] : IsCType (CArray_t α) where
-  isCType := True
-instance (α : Type u) [IsCType α] : IsCFuncArgType (CArray_t α) where
-  isCFuncArgType := True
-
-
-/- - we need to build scope together with the type
-since for the struct to be usefull we need to be able to acces it
-By the contract the first item in the scope is a type that can produce all identifiers in this scope.
-
-The first list is a list of identifier producers for argument types having identifiers in it, like CStruct_t
-The rest is just CTypes.
--/
-
--- def CTrivialLabelScopeProducer := Unit
--- instance : IdentifierProducer CTrivialLabelScopeProducer Nat where
---   produce_identifier val stream := stream.putStr s!"id_{val}"
---   can_produce _ := True
---   are_identifiers_unique _ := True
 
 inductive CStructType : (List (Type u)) -> Type (u+1) where
   | nil : CStructType []
@@ -276,9 +231,6 @@ instance {α: List Type} : IsCType (CUnionType α) where
 instance (α:List Type) : IsCFuncArgType (CUnionType α) where
   isCFuncArgType := True
 
-
-
-
 /-- CFunction represents a C function type.
 
 arguments → (does it have variable arguments? : Bool) → return type
@@ -291,24 +243,24 @@ instance (arg_types : CFuncArgVarScope γ) (elipses : Bool) (ret_type : Type u) 
     IsCType (CFunctionType arg_types elipses ret_type) where
   isCType := True
 
-example := CFuncArgVarScope.cons (CQualifiedType CInt32Type CTypeQualificationVolatile) (CFuncArgVarScope.cons (CFloatType .F64) CFuncArgVarScope.nil)
-example : CFunctionType (CFuncArgVarScope.cons (CQualifiedType CInt32Type CTypeQualificationVolatile) (CFuncArgVarScope.cons (CFloatType .F64) CFuncArgVarScope.nil)) false (CVoidType ) :=
+example := CFuncArgVarScope.nil
+example := CFuncArgVarScope []
+example : CFuncArgVarScope [CFloatType CFloatSize.F64] := CFuncArgVarScope.cons (CFloatType .F64) CFuncArgVarScope.nil (by simp [IsVoidCType.isVoidCType]; )
+example : CFuncArgVarScope [CQualifiedType CInt32Type CTypeQualificationVolatile, CFloatType CFloatSize.F64] := CFuncArgVarScope.cons
+  (CQualifiedType CInt32Type CTypeQualificationVolatile) (CFuncArgVarScope.cons
+    (CFloatType .F64) CFuncArgVarScope.nil (by simp [IsVoidCType.isVoidCType]; ) ) (by simp [IsVoidCType.isVoidCType]; )
+example : CFunctionType
+  (CFuncArgVarScope.cons (CQualifiedType CInt32Type CTypeQualificationVolatile) (CFuncArgVarScope.cons
+    (CFloatType .F64) CFuncArgVarScope.nil (by simp [IsVoidCType.isVoidCType]; ) )
+    (by simp [IsVoidCType.isVoidCType]; ) ) false (CVoidType ) :=
   CFunctionType.mk
 
 example :=
   let args := CFuncArgVarScope.cons CInt32Type
               (CFuncArgVarScope.cons (CFloatType .F64)
-              CFuncArgVarScope.nil)
+              CFuncArgVarScope.nil (by simp [IsVoidCType.isVoidCType]; )) (by simp [IsVoidCType.isVoidCType]; )
   let ret := CVoidType
   (CFunctionType.mk : CFunctionType args false ret )
-
-
-/- we need type production:
-
-There are two options here:
-1. we have declaration -- "type identifier;"
-2. we have casting -- "(type)"
--/
-
+example := CFuncArgVarScope [CInt32Type, CFloatType .F64]
 
 end LeanC
