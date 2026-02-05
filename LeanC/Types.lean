@@ -1,3 +1,6 @@
+import LeanC.TypeClasses
+import LeanC.Scopes
+
 /-!
 # C Type System for lean_c
 
@@ -43,50 +46,6 @@ universe u
 class CProgramContext where
   is_context := True
 
-/-- IsCType is a type class for distinguishing C types from other types. -/
-class IsCType (α : Type u) where
-  /-- Proof that the type α is a C type -/
-  isCType : Prop
-class IsVoidCType (α : Type u) where
-  /-- Proof that the type α is a C type -/
-  isVoidCType : Prop
-instance {α:Type u}: IsVoidCType α where
-  isVoidCType := False
-
-class IsCFuncArgType (α : Type u) where
-  /-- Proof that the type α is a C type -/
-  isCFuncArgType : Prop
-/-- All function types are c types -/
-instance {α :Type u} [IsCFuncArgType α] : IsCType α where
-  isCType := True
-class IsIntegerType (α : Type u) where
-  /-- Proof that the type α is an integer C type -/
-  isIntegerType : Prop
-class CTypeSize (α : Type u) where
-  size_of : α -> Nat
-
-/-- CLabelScope represents the scope of labels in C.
-labels appear inside function and this would be function scope
-But also types have CLabelScope. For instance typedefs can define type labels.
-The distinctive feature these scopes do not have types associated with them.
-They are resolved with names only.
-
-The only requirements we have is that we can produce unique identifiers for labels within the scope.
--/
-def CLabelScope := Nat
-
-/-- α is a list of c types -/
-inductive CVarScope : (List (Type u)) -> Type (u+1) where
-  | nil : CVarScope []
-  | cons {τs : List (Type u)} (τ : Type u ) [IsCType τ] : CVarScope (τ :: τs)
-
-example := CVarScope.nil
-
-inductive CFuncArgVarScope : (List (Type u)) -> Type (u+1) where
-  | nil : CFuncArgVarScope []
-  | cons {τs : List (Type u)} (τ : Type u ) [IsCFuncArgType τ]
-    (_ :CFuncArgVarScope τs)  (not_void : ¬ (IsVoidCType.isVoidCType τ) ) : CFuncArgVarScope (τ :: τs)
-
 inductive CIntSize where
 | I8
 | I16
@@ -112,67 +71,44 @@ instance : CTypeSize CFloatSize where
     | CFloatSize.F64 => 8
 
 
-class CTypeQualification (α : Type u) where
-  isCTypeQualification : Prop
-instance {α :Type u} [IsCFuncArgType α] : IsCFuncArgType (CTypeQualification α) where
-  isCFuncArgType := True
-
-inductive CTypeQualificationNone (α:Type u) [IsCType α] where
-| mk : CTypeQualificationNone α
-instance (α:Type u) [IsCType α] : CTypeQualification (CTypeQualificationNone α) where
-  isCTypeQualification := True
-
-inductive CTypeQualificationConst  (α : Type u) [IsCType α] where
+inductive CTypeQualificationConst (α : Type u) [IsCType α] where
   | mk
-
-inductive CTypeQualificationVolatile where
-  | mk
-instance : CTypeQualification CTypeQualificationVolatile where
-  isCTypeQualification := True
-
-inductive CTypeQualificationRestrict where
-  | mk
-instance : CTypeQualification CTypeQualificationRestrict where
-  isCTypeQualification := True
-
-
-inductive CQualifiedType (α : Type u) [IsCFuncArgType α] (β  : Type) [CTypeQualification β] where
-  | mk : CQualifiedType α β
-instance (α : Type u) [IsCFuncArgType α] {β  :Type} [CTypeQualification β]  : IsCType (CQualifiedType α β) where
+instance  (α : Type u) [IsCType α] :  IsCType (CTypeQualificationConst α) where
   isCType := True
 
-instance {α :Type u} [IsCFuncArgType α] (β  : Type) [CTypeQualification β] : IsCFuncArgType (CQualifiedType α β) where
-  isCFuncArgType := True
+inductive CTypeQualificationVolatile (α : Type u) [IsCType α] where
+  | mk
+instance  (α : Type u) [IsCType α] :  IsCType (CTypeQualificationVolatile α) where
+  isCType := True
 
-/-- Void type -/
+inductive CTypeQualificationRestrict (α : Type u) [IsCType α] where
+  | mk
+instance  (α : Type u) [IsCType α] :  IsCType (CTypeQualificationRestrict α) where
+  isCType := True
+
+/-- Void type
+it is not a CType, only ref to void is a c type that we will deal in pointer section.
+
+-/
 inductive CVoidType  where
   | mk : CVoidType
-instance : IsCType CVoidType where
-  isCType := True
-instance : IsVoidCType CVoidType where
-  isVoidCType := True
+/-- in addition to any c type we can have a pointer to void. -/
+instance : IsPointedCType CVoidType where
+  isPointedCType := True
 
 /-- Void type (α - type qualification) -/
-inductive CCharType (α : Type) [CTypeQualification α]  where
+inductive CCharType (α : Type) where
   | mk : CCharType α
-instance {α :Type} [CTypeQualification α] : IsCType (CCharType α) where
-  isCType := True
-instance {α :Type} [CTypeQualification α] : IsCFuncArgType (CCharType α) where
-  isCFuncArgType := True
-instance {α :Type} [CTypeQualification α] : CTypeSize (CCharType α) where
+instance {α :Type} : CTypeSize (CCharType α) where
   size_of _ := 1
 
 /-- CTypedef represents a C typedef definition. -/
 inductive CTypedef (α:Type u) [IsCType α]   where
   | mk : CTypedef α
-instance (α : Type u) [IsCType α] : IsCFuncArgType (CTypedef α) where
-  isCFuncArgType := True
 
 
 inductive CIntType (sz : CIntSize) (sgn : Bool)where
 | mk : CIntType sz sgn
-instance (sz : CIntSize) (sgn : Bool) : IsCFuncArgType (CIntType sz sgn) where
-  isCFuncArgType := True
 instance (sz : CIntSize) (sgn : Bool) :  IsCType (CIntType sz sgn) where
   isCType := True
 instance (sz : CIntSize) (sgn : Bool) : CTypeSize (CIntType sz sgn) where
@@ -193,43 +129,34 @@ inductive CFloatType (sz : CFloatSize) where
 | mk : CFloatType sz
 instance (sz : CFloatSize) : IsCType (CFloatType sz) where
   isCType := True
-instance (sz : CFloatSize) : IsCFuncArgType (CFloatType sz) where
-  isCFuncArgType := True
 
 /-- CPointer_t represents a C pointer type.
 There is no restriction to what pointer type can point to.
 -/
-inductive CPointerType (α : Type u) [IsCType α] where
+inductive CPointerType (α : Type u) [IsPointedCType α] where
   | mk : CPointerType α
-instance (α : Type u) [IsCType α] : IsCType (CPointerType α) where
+instance (α : Type u) [IsPointedCType α] : IsCType (CPointerType α) where
   isCType := True
-instance (α : Type u) [IsCType α] : IsCFuncArgType (CPointerType α) where
-  isCFuncArgType := True
 
 inductive CStructType : (List (Type u)) -> Type (u+1) where
   | nil : CStructType []
   | cons {τs : List (Type u)}
-     (τ : Type u ) [IsCType τ] [IsVoidCType τ]
-     (_: CStructType τs )
-     (not_void : ¬ (IsVoidCType.isVoidCType τ) ): CStructType (τ :: τs)
+     (τ : Type u ) [IsCType τ]
+     (_: CStructType τs ): CStructType (τ :: τs)
   | bitfield {τs : List (Type u)} {α :Type u} [CTypeSize α] [IsIntegerType α ] (size : Nat) (storage_type : α ) ( can_store : size <= 8*(CTypeSize.size_of storage_type))   : CStructType ( α :: τs)
 
 instance {α : List Type}: IsCType (CStructType α) where
   isCType := True
-instance {α : List Type}: IsCFuncArgType (CStructType α)  where
-  isCFuncArgType := True
 
-example :CStructType [CUInt32Type] := CStructType.cons CUInt32Type CStructType.nil (by simp [IsVoidCType.isVoidCType];  )
-/- next  example should fail -> we can prove it is false -/
--- example :CStructType [CVoidType, CUInt32Type] := CStructType.cons CVoidType (CStructType.cons CUInt32Type CStructType.nil (by simp [IsVoidCType.isVoidCType]; ) ) (by simp [IsVoidCType.isVoidCType]; decide; )
-example := IsCFuncArgType.isCFuncArgType (CStructType [CUInt32Type, CVoidType])
+example :CStructType [CUInt32Type] := CStructType.cons CUInt32Type CStructType.nil
+/- next  example should fail -> we cannot syntesythe IsCType for void type -/
+-- example :CStructType [CVoidType, CUInt32Type] := CStructType.cons CVoidType (CStructType.cons CUInt32Type CStructType.nil )
 
+/-- CUnion is similat to CStruct Type-/
 inductive CUnionType (α: List Type) where
   | mk : CVarScope α → CUnionType α
 instance {α: List Type} : IsCType (CUnionType α) where
   isCType := True
-instance (α:List Type) : IsCFuncArgType (CUnionType α) where
-  isCFuncArgType := True
 
 /-- CFunction represents a C function type.
 
@@ -237,30 +164,29 @@ arguments → (does it have variable arguments? : Bool) → return type
 TODO: one have to take care of void ctype would not be a part of argument types
 -/
 
-inductive CFunctionType (arg_types : CFuncArgVarScope γ) (elipses : Bool) (ret_type : Type u) [IsCType ret_type] where
+inductive CFunctionType (arg_types : CVarScope γ) (elipses : Bool) (ret_type : Type u) [IsCFuncReturnType ret_type] where
   | mk : CFunctionType arg_types elipses ret_type
-instance (arg_types : CFuncArgVarScope γ) (elipses : Bool) (ret_type : Type u) [IsCType ret_type] :
-    IsCType (CFunctionType arg_types elipses ret_type) where
-  isCType := True
+instance (arg_types : CVarScope γ) (elipses : Bool) (ret_type : Type u) [IsCFuncReturnType ret_type] :
+    IsPointedCType (CFunctionType arg_types elipses ret_type) where
+  isPointedCType := True
 
-example := CFuncArgVarScope.nil
-example := CFuncArgVarScope []
-example : CFuncArgVarScope [CFloatType CFloatSize.F64] := CFuncArgVarScope.cons (CFloatType .F64) CFuncArgVarScope.nil (by simp [IsVoidCType.isVoidCType]; )
-example : CFuncArgVarScope [CQualifiedType CInt32Type CTypeQualificationVolatile, CFloatType CFloatSize.F64] := CFuncArgVarScope.cons
-  (CQualifiedType CInt32Type CTypeQualificationVolatile) (CFuncArgVarScope.cons
-    (CFloatType .F64) CFuncArgVarScope.nil (by simp [IsVoidCType.isVoidCType]; ) ) (by simp [IsVoidCType.isVoidCType]; )
+example := CVarScope.nil
+example := CVarScope []
+example : CVarScope [CFloatType CFloatSize.F64] := CVarScope.cons (CFloatType .F64) CVarScope.nil
+example : CVarScope [CTypeQualificationVolatile CInt32Type, CFloatType CFloatSize.F64] := CVarScope.cons
+  (CTypeQualificationVolatile CInt32Type) (CVarScope.cons
+    (CFloatType .F64) CVarScope.nil )
 example : CFunctionType
-  (CFuncArgVarScope.cons (CQualifiedType CInt32Type CTypeQualificationVolatile) (CFuncArgVarScope.cons
-    (CFloatType .F64) CFuncArgVarScope.nil (by simp [IsVoidCType.isVoidCType]; ) )
-    (by simp [IsVoidCType.isVoidCType]; ) ) false (CVoidType ) :=
+  (CVarScope.cons (CTypeQualificationVolatile CInt32Type) (CVarScope.cons
+    (CFloatType .F64) CVarScope.nil  ) ) false (CVoidType ) :=
   CFunctionType.mk
 
 example :=
-  let args := CFuncArgVarScope.cons CInt32Type
-              (CFuncArgVarScope.cons (CFloatType .F64)
-              CFuncArgVarScope.nil (by simp [IsVoidCType.isVoidCType]; )) (by simp [IsVoidCType.isVoidCType]; )
+  let args := CVarScope.cons CInt32Type
+              (CVarScope.cons (CFloatType .F64)
+              CVarScope.nil )
   let ret := CVoidType
   (CFunctionType.mk : CFunctionType args false ret )
-example := CFuncArgVarScope [CInt32Type, CFloatType .F64]
+example := CVarScope [CInt32Type, CFloatType .F64]
 
 end LeanC
