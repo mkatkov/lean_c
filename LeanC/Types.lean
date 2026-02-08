@@ -138,12 +138,16 @@ inductive CPointerType (α : Type u) [IsPointedCType α] where
 instance (α : Type u) [IsPointedCType α] : IsCType (CPointerType α) where
   isCType := True
 
+inductive CBitfield (α :Type ) [IsIntegerType α] (n:Nat) where
+| mk
+instance {α : Type} {n : Nat } [IsIntegerType α] : IsStructType (CBitfield α n) where
+ isStructType := True
+
 inductive CStructType : (List (Type u)) -> Type (u+1) where
   | nil : CStructType []
   | cons {τs : List (Type u)}
-     (τ : Type u ) [IsCType τ]
+     (τ : Type u ) [IsStructType τ]
      (_: CStructType τs ): CStructType (τ :: τs)
-  | bitfield {τs : List (Type u)} {α :Type u} [CTypeSize α] [IsIntegerType α ] (size : Nat) (storage_type : α ) ( can_store : size <= 8*(CTypeSize.size_of storage_type))   : CStructType ( α :: τs)
 
 instance {α : List Type}: IsCType (CStructType α) where
   isCType := True
@@ -161,7 +165,6 @@ instance {α: List Type} : IsCType (CUnionType α) where
 /-- CFunction represents a C function type.
 
 arguments → (does it have variable arguments? : Bool) → return type
-TODO: one have to take care of void ctype would not be a part of argument types
 -/
 
 inductive CFunctionType (arg_types : CVarScope γ) (elipses : Bool) (ret_type : Type u) [IsCFuncReturnType ret_type] where

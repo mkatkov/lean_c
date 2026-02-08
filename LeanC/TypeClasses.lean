@@ -38,5 +38,9 @@ class IsIntegerType (α : Type u) where
 class CTypeSize (α : Type u) where
   size_of : α -> Nat
 
+class IsStructType (α : Type u) where
+  isStructType : Prop
+instance (α : Type u ) [IsCType α ] : IsStructType α where
+ isStructType := True
 
 end LeanC
