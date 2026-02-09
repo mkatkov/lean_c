@@ -113,17 +113,21 @@ instance (sz : CIntSize) (sgn : Bool) :  IsCType (CIntType sz sgn) where
   isCType := True
 instance (sz : CIntSize) (sgn : Bool) : CTypeSize (CIntType sz sgn) where
   size_of (_x: CIntType sz sgn ):= CTypeSize.size_of sz
+instance {sz:CIntSize} {sgn:Bool} : IsIntegerType (CIntType sz sgn) where
+ isIntegerType := True
 
-example := CIntType CIntSize.I8 False
+example := CIntType CIntSize.I8 false
 
-abbrev CUInt8Type := CIntType CIntSize.I8 False
-abbrev CUInt16Type := CIntType CIntSize.I16 False
-abbrev CUInt32Type := CIntType CIntSize.I32 False
-abbrev CUInt64Type := CIntType CIntSize.I64 False
-abbrev CInt8Type := CIntType CIntSize.I8 True
-abbrev CInt16Type := CIntType CIntSize.I16 True
-abbrev CInt32Type := CIntType CIntSize.I32 True
-abbrev CInt64Type := CIntType CIntSize.I64 True
+abbrev CUInt8Type := CIntType CIntSize.I8 false
+abbrev CUInt16Type := CIntType CIntSize.I16 false
+abbrev CUInt32Type := CIntType CIntSize.I32 false
+abbrev CUInt64Type := CIntType CIntSize.I64 false
+abbrev CInt8Type := CIntType CIntSize.I8 true
+abbrev CInt16Type := CIntType CIntSize.I16 true
+abbrev CInt32Type := CIntType CIntSize.I32 true
+abbrev CInt64Type := CIntType CIntSize.I64 true
+
+example := IsIntegerType.isIntegerType CInt64Type
 
 inductive CFloatType (sz : CFloatSize) where
 | mk : CFloatType sz
