@@ -16,7 +16,7 @@ instance {sz : CIntSize} : IsIntegerNonnegative (CIntType sz false) where
 
 example := IsIntegerNonnegative.isNonnegative (CIntType CIntSize.I8 false)
 
-theorem uint_nonnegative {sz : CIntSize} :
+theorem c_uint_nonnegative {sz : CIntSize} :
   IsIntegerNonnegative.isNonnegative (CIntType sz false) := by
   simp [IsIntegerNonnegative.isNonnegative]
 

@@ -5,6 +5,7 @@
 
 
 import Tests.TestMain
+import LeanC.Arrays
 
 open Lean IO
 

@@ -70,9 +70,14 @@ universe u
 /-- we need to denote an index of an array.
   index can be a Natural value, or it can be a variable with non-negative value.
   We cannot access the region before the allocated region.
+
+
+  value is a temporal solution
+  we need to check if this will work later when we do array operations.
  -/
-class CIndex ( α : Type ) where
+class CIndex (α : Type u) where
   isIndex : Prop
+  value : Nat
 
 /-- CArray defines a set of propositions to ensure arrays is well behaving -/
 class CArray (α:Type) where
@@ -85,13 +90,20 @@ class CArray (α:Type) where
   isDynamicallyAllocated : Prop
   /-- for accessing elements of an array we need to be sure the array is allocated and
     the indexed element is within allocated region. -/
-  within_bounds (α : Type ) [CIndex α] : Prop
+  within_bounds (β  : Type ) [CIndex β ] : Prop
+
+instance {α : Type u}  [IsPointedCType α] : CArray (CPointerType α ) where
+  isAllocated := False
+  isDynamicallyAllocated := False
+  within_bounds (β  : Type ) [CIndex β] := False
+
 
 /-- an implementation of constant index as a natural number -/
 inductive CConstIndex (n:Nat) where
 | mk
 instance {n:Nat} : CIndex (CConstIndex n) where
   isIndex := True
+  value := n
 
 /-- An implementation of index variable, conceptually this can be stored in the
   CVarScope and behave as any other C variable, but with the rules assigned to it.
@@ -105,53 +117,65 @@ instance {n:Nat} : CIndex (CConstIndex n) where
 
   uints have the proof by construction that they are nonegative.
 -/
-inductive CVarIndex (α:Type) [IsIntegerType α] [IsIntegerNonnegative α]
+inductive CVarIndex (α : Type u) [IsIntegerType α] [IsIntegerNonnegative α]
   (non_negative: IsIntegerNonnegative.isNonnegative α ) where
+| mk : CVarIndex α non_negative
+instance (α : Type u) [IsIntegerType α] [IsIntegerNonnegative α]
+  (p: IsIntegerNonnegative.isNonnegative α ) :
+    CIndex (CVarIndex α p ) where
+  isIndex := True
+  value := a  -- TODO: we need to find a way to reference to the value.
+  -- essencially we need some proofs related to value, so do not need Nat.
+instance (α : Type u) [IsIntegerType α] [IsIntegerNonnegative α]
+  (p: IsIntegerNonnegative.isNonnegative α ) :
+    IsCType (CVarIndex α p ) where
+  isCType := True
+
+example := CVarIndex CUInt64Type (by simp [c_uint_nonnegative])
+
+/-- Global static memory block (should be inimialized outside any function)
+We are assuming that compiler put it in the data/bss segment of program, and it is
+loaded together with the program.
+ -/
+inductive CGlobalStaticMemoryBlock (α : Type u) [IsPointedCType α] (n:Nat) where
 | mk
-
-example := CVarIndex CUInt64Type (by simp [uint_nonnegative])
-
-------  CONTINUE HERE -------
-
-
-inductive CStaticMemoryBlock (n:Nat) where
-| private mk
+instance (α : Type u) [IsPointedCType α] (n:Nat) :
+  IsCType (CGlobalStaticMemoryBlock α n) where
+  isCType := True
+instance {α : Type u}  [IsPointedCType α] {n:Nat} : CArray (CGlobalStaticMemoryBlock α n) where
+  isAllocated := True
+  isDynamicallyAllocated := False
+  within_bounds (β  : Type ) [CIndex β] := CIndex.value β < n
 
 /-- For fixed size memory blocks we know the allocated size
-so we can supply it with the parameter
+so we can supply it with the parameter. This is dynamically allocated
+block of memory, so introduction of this variable cannot be made public.
+For instance the variable should be allocated and can fail
+so the programm should expose 2 branches one containing
+CFixedSizeMemoryBlock and another one containig failed allocation.
+
+Thechnically this is a pointer with allocated size information, so it can be added to CVarScore
+as a type.
 -/
-inductive CFixedSizeMemoryBlock (n:Nat) where
-| mk
+inductive CFixedSizeMemoryBlock (α : Type u) [IsPointedCType α] (n:Nat) where
+| private mk : CFixedSizeMemoryBlock α n
+instance (α : Type u) [IsPointedCType α] (n:Nat) : IsCType (CFixedSizeMemoryBlock α n) where
+  isCType := True
+  /-- CFixedSizeMemoryBlock is a specialized pointer -> Coercion -/
+instance {α:Type u} [IsPointedCType α] (_n:Nat)  : CoeOut (CFixedSizeMemoryBlock α _n) (CPointerType α) where
+  coe := fun _ => CPointerType.mk
 
 /-- For dynamically allocated memory block we need a variable that will store
 the allocated size, so we need a reference to the variable.
 Roughly speaking this only possible after we define Variables, and references to variables.
 -/
-inductive CDynamicMemoryBlock where
-| mk
+inductive CDynamicMemoryBlock
+  (α : Type u) [IsPointedCType α]
+  (β  : Type u) [IsIntegerType β ] [IsIntegerNonnegative β  ]
+  (non_negative: IsIntegerNonnegative.isNonnegative β  )
+  where
+| mk : CDynamicMemoryBlock α β non_negative
 
-
-/-- CMemoryBlock represents allocated memory block
-It is technically equivalent to (void *) type with allocated size information.
-It represents succesifully allocated block of RAM
-Technically Mempory block can be an argument of f(void *)
-
-There are 2 way to allocate memory:
-- we can have a fixed size allocation known at compile time
-- dynamic allocations, we need a variable storing actual value
--/
-inductive CMemoryBlock (α:Type u) where
-| mk
-
-/-- CArray_t represents a C array type.
-
-CArray has element type and size. It is usually stack allocated, when declared.
-However we can define a pointer to an array type as well. This can be in heap, but we indicate that
-each array has fixed size.
--/
-inductive CArray_t (α : Type u) [IsCType α] where
-  | mk : Nat → CArray_t α
-instance (α : Type u) [IsCType α] : IsCType (CArray_t α) where
-  isCType := True
+example := CDynamicMemoryBlock CInt8Type CUInt64Type (by simp [c_uint_nonnegative])
 
 end LeanC
