@@ -62,6 +62,30 @@ Anfortunately at this level of description we can have only `sorry` proof for me
 The real proof would require a system allocation core to be implemented within this system.
 
 
+Please note that we are slowily building variable properties.
+There are 2 ways to do it.
+1. Some concrete properties, like allocated array or size of allocation can be defined
+  via classes and class implementation, since these are basic properties defined for
+  all arrays, and hat is essential for programming we can keep it this way.
+
+2. For each variable we can have its type and list of properties. Than we need a way to reflect
+  which property we need at a particular moment for the proof.
+
+For instance we now have a problem of making sure that the index is within a bound.
+For concreteness a[i]. One way to get the proof that i is within the bound is to
+have ```C
+if( i< len(a) ) b= a[i];
+```
+meaning that if have 2 branches with one branch having the proof that i < len(a)
+and another branch having a proof of negation of the proposition, so the variable i can
+be assotiated with corresponding proposition in each branch, that will support the proof
+of withing bounds. Suppose that we have ```C
+if( i< len(a) ){
+ int j = i/2;
+b= a[j];
+}
+``` Nw we have 2 propositions (i< len(a) and j= i/2) how do we select the correct proposition in the
+list of propositions? There are maybe other propositions related to different aspects of the code, not related to indexing.
 -/
 
 namespace LeanC
@@ -80,7 +104,7 @@ class CIndex (α : Type u) where
   value : Nat
 
 /-- CArray defines a set of propositions to ensure arrays is well behaving -/
-class CArray (α:Type) where
+class CArray (α:Type u) where
   /-- when accessing, reallocating and freeing array we need to be sure it is allocated.
     when allocating array we need to be sure it is not yet allocated, otherwise we get a memory leak.
   -/
@@ -99,9 +123,16 @@ instance {α : Type u}  [IsPointedCType α] : CArray (CPointerType α ) where
 
 
 /-- an implementation of constant index as a natural number -/
-inductive CConstIndex (n:Nat) where
+inductive CConstIndex (n:Nat) : Type (u+1) where
 | mk
 instance {n:Nat} : CIndex (CConstIndex n) where
+  isIndex := True
+  value := n
+
+/-- an implementation of fixed-size dynamic index (to distinguish from global static) -/
+inductive CFixedIndex (n:Nat) : Type (u+1) where
+| mk
+instance {n:Nat} : CIndex (CFixedIndex n) where
   isIndex := True
   value := n
 
@@ -118,14 +149,14 @@ instance {n:Nat} : CIndex (CConstIndex n) where
   uints have the proof by construction that they are nonegative.
 -/
 inductive CVarIndex (α : Type u) [IsIntegerType α] [IsIntegerNonnegative α]
-  (non_negative: IsIntegerNonnegative.isNonnegative α ) where
+  (non_negative: IsIntegerNonnegative.isNonnegative α ) : Type (u+1) where
 | mk : CVarIndex α non_negative
 instance (α : Type u) [IsIntegerType α] [IsIntegerNonnegative α]
   (p: IsIntegerNonnegative.isNonnegative α ) :
     CIndex (CVarIndex α p ) where
   isIndex := True
-  value := a  -- TODO: we need to find a way to reference to the value.
-  -- essencially we need some proofs related to value, so do not need Nat.
+  value := 0 -- TODO: reference the underlying integer value or provide appropriate extraction/proof
+  -- essentially we need some proofs related to value, so do not need Nat.
 instance (α : Type u) [IsIntegerType α] [IsIntegerNonnegative α]
   (p: IsIntegerNonnegative.isNonnegative α ) :
     IsCType (CVarIndex α p ) where
@@ -164,6 +195,10 @@ instance (α : Type u) [IsPointedCType α] (n:Nat) : IsCType (CFixedSizeMemoryBl
   /-- CFixedSizeMemoryBlock is a specialized pointer -> Coercion -/
 instance {α:Type u} [IsPointedCType α] (_n:Nat)  : CoeOut (CFixedSizeMemoryBlock α _n) (CPointerType α) where
   coe := fun _ => CPointerType.mk
+instance {α : Type u}  [IsPointedCType α] {n:Nat} : CArray (CFixedSizeMemoryBlock α n) where
+  isAllocated := True
+  isDynamicallyAllocated := True
+  within_bounds (β  : Type ) [CIndex β] := CIndex.value β < n
 
 /-- For dynamically allocated memory block we need a variable that will store
 the allocated size, so we need a reference to the variable.
@@ -175,7 +210,60 @@ inductive CDynamicMemoryBlock
   (non_negative: IsIntegerNonnegative.isNonnegative β  )
   where
 | mk : CDynamicMemoryBlock α β non_negative
+instance {α:Type u} [IsPointedCType α]
+  {β  : Type u} [IsIntegerType β ] [IsIntegerNonnegative β  ]
+  {non_negative: IsIntegerNonnegative.isNonnegative β }  : CoeOut (CDynamicMemoryBlock α β non_negative ) (CPointerType α) where
+  coe := fun _ => CPointerType.mk
+instance  {α:Type u} [IsPointedCType α]
+  {β  : Type u} [IsIntegerType β ] [IsIntegerNonnegative β  ]
+  {non_negative: IsIntegerNonnegative.isNonnegative β } :
+    CArray (CDynamicMemoryBlock α β non_negative) where
+  isAllocated := True
+  isDynamicallyAllocated := True
+  within_bounds (γ   : Type ) [CIndex γ ] := CIndex.value γ  < CIndex.value (CVarIndex β non_negative)
 
 example := CDynamicMemoryBlock CInt8Type CUInt64Type (by simp [c_uint_nonnegative])
+
+
+/-- This is alternative formulation for allocaed blocks in a basic variant, since they all return the same
+type of information. See examples for the definition of types.
+
+Since we do not know what would work better we will keep both before decision.
+-/
+
+inductive CArrayType (α : Type u) [IsPointedCType α] : (n : Type (u+1)) -> Type (u+1) where
+| global_static (i : Nat) : CArrayType α (CConstIndex i)
+| private fixed_size_dynamic (i:Nat) : CArrayType α (CFixedIndex i)
+| private dynamic (β  : Type u) [IsIntegerType β ] [IsIntegerNonnegative β  ]
+  (non_negative: IsIntegerNonnegative.isNonnegative β  ) : CArrayType α (CVarIndex β non_negative)
+
+example := CArrayType.global_static (α := CPointerType CVoidType) 5
+example := CArrayType.fixed_size_dynamic (α := CPointerType CUInt16Type ) 15
+example := CArrayType.dynamic (α := CPointerType CUInt16Type) (β := CUInt8Type) (by simp [c_uint_nonnegative])
+
+instance {α : Type u} [IsPointedCType α] {n:Type (u+1)} : IsCType (CArrayType α n) where
+  isCType := True
+  /-- CFixedSizeMemoryBlock is a specialized pointer -> Coercion -/
+instance {α:Type u} [IsPointedCType α] {n:Type (u+1)}: CoeOut (CArrayType α n) (CPointerType α) where
+  coe := fun _ => CPointerType.mk
+
+instance {α : Type u} [IsPointedCType α] {i:Nat} : CArray (CArrayType α (CConstIndex i)) where
+  isAllocated := True
+  isDynamicallyAllocated := False
+  within_bounds (γ : Type) [CIndex γ] := CIndex.value γ < i
+
+instance {α : Type u} [IsPointedCType α] {i:Nat} : CArray (CArrayType α (CFixedIndex i)) where
+  isAllocated := True
+  isDynamicallyAllocated := True
+  within_bounds (γ : Type) [CIndex γ] := CIndex.value γ < i
+
+instance {α : Type u} [IsPointedCType α] {β : Type u} [IsIntegerType β ] [IsIntegerNonnegative β ]
+  (non_negative : IsIntegerNonnegative.isNonnegative β) :
+    CArray (CArrayType α (CVarIndex β non_negative)) where
+  isAllocated := True
+  isDynamicallyAllocated := True
+  within_bounds (γ : Type) [CIndex γ] :=
+    CIndex.value γ < CIndex.value (CVarIndex β non_negative)
+
 
 end LeanC
