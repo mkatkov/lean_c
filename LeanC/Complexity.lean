@@ -53,11 +53,36 @@ instance : CComplexityRelationship CUndecidable where
   minimalStrictlyLarger := []
   eqialTo := []
 
-/- we need to have machinery to keep state of art knowledge of complexity classes
+/-- we need to have machinery to keep state of art knowledge of complexity classes
 when they added and removed.
 
 Above the only stub for newly developed classes we actually need to insert them into knowledge base.
 So the judgement about program requirement would be available at building time.
+
+CComplexityShadowNode is a gluing layer for complexity classes.
+The idea it to have current structure with intermediate nodes making correct chain structure
+for example, if we already know C1 < c2 < C3 (C. is a collection of classes, c. is specific complexity class)
+and we insert c4 with c2 < c4 < C3 the final structure algorithmically shoulld be C1 < c2 < c3 < C4 .
+But if we already have fixed typies for c2 this cannot be implemented. So we need a shadow type that will hols c2 and
+update its path. So the structure will be Shadow1( C1)  < Shadow2( c2 ) < Shadow3( c4 )  < Shadow(C3)
+
+in this way everytime an intermediate class is intriduced we need to have an extra shadoow class
+
+Alternative way is to rebuild knowledge base from scratch when new class is added covering them with shaddow layers
+that represent chains correctly. I guess we can create a list of types and derive partial order on fly.
 -/
+
+def can_insert_complexity_class_to_grapth {τs : List (Type u)} (τ : Type u )
+  [CComplexity τ] ( cg: CComplexityGraph τs ) : Prop := False
+
+inductive CComplexityGraph : (List (Type u)) -> Type (u+1) where
+  | nil : CComplexityGraph []
+  | insert {τs : List (Type u)}
+     (τ : Type u ) [CComplexity τ]
+     (_: CComplexityGraph τs ): CComplexityGraph (τ :: τs)
+
+
+instance {α : List (Type u)} : LE (CComplexityGraph α) where
+  le α β  := False
 
 end LeanC
