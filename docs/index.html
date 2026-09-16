@@ -40,7 +40,7 @@
 	<body>
 		<header>
 			<h1>lean_c</h1>
-			<p><a href="https://lean-lang.org/" > Lean-based</a> framework to generate portable <a href="https://en.wikipedia.org/wiki/C_(programming_language)">C</a> and enable machine-checked code manipulation.</p>
+			<p><a href="https://lean-lang.org/" > Lean-based</a> framework to generate portable <a href="https://en.wikipedia.org/wiki/C_(programming_language)">C</a> with formal proofs targeting bug-free, undefined-behavior-free software.</p>
 			<div style="margin-top:8px">
 				<span class="badge">Early-stage</span>
 				<span class="badge">Research + Engineering</span>
@@ -95,8 +95,9 @@
                     <li> Lean 4 is excellent for writing verified programs and proofs. </li>
 					<li> However, produced binaries are large, making deployment in constrained or embedded environments difficult.</li>
 					<li>C remains the most widely supported systems language, especially where binary size, predictability, and platform support matter. Moreover, it is relatively easy to implement for new platforms compared to higher-level languages.</li>
-                    <li>There is currently no practical, proof-aware pipeline from high level abstractions to low-level C code.</li>
-					<li>Bridging the two enables <b>formally verified</b> small, fast, and correct <b>low-level software</b>.</li>
+<li>There is currently no practical, proof-aware pipeline from high level abstractions to low-level C code.
+				<li>Built for elimination of classes of bugs via machine-checked proofs, not just testing.</li>
+				<li>Bridging the two enables <b>formally verified</b>, bug-reduced and bug-free small, fast, and correct <b>low-level software</b>.</li>
                 </ul>
             </section>            
 
@@ -133,10 +134,7 @@
 				<h2>Guarantees & Scope</h2>
 				<ul>
 					<li><b>Scope:</b> small, well-defined C subset (e.g., Clight) with portable output.</li>
-					<li><b>Formal guarantees:</b> syntax correctness, type preservation, memory safety, resource and runtime bounds, and absence of undefined behavior.</li>
-					<li><b>Non‑goals:</b> full Lean 4 → full C99 coverage; heavy OS runtime or GC; replacing verified compilers (aim to interoperate with CompCert).</li>
-				</ul>
-			</section>
+				<li><b>No-Bug focus:</b> proof obligations are designed to eliminate undefined behavior and memory/logic bug classes at Lean-level before code generation.</li>
 
             <section id="status">
 				<h2>Current Status</h2>
