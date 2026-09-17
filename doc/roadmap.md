@@ -247,6 +247,10 @@ Acceptance criteria
 Milestones
 - M1: Prove correctness for a small function.
 - M2: Add a cost model and prove a small algorithm's complexity.
+  Status (2026-09-17): in-progress — cost model + base lattices +
+  `O_log` insertion + seq/branch composition landed; see
+  `doc/next_task.md` and `doc/implementation_plan.md` (T1–T8 done,
+  `Tests/TestComplexity.lean` green).
 
 ## Extras and Notes
 - Targeting Clight/CompCert semantics is highly beneficial: reuse proven semantics and style of proofs from CompCert papers and code.
