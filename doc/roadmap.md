@@ -92,6 +92,11 @@ Proof obligations
 
 Milestones
 - M1: Integer and char literal representation and serializer.
+  Status (2026-09-18): in-progress — bound-carrying `CLiteral` + `litBound`
+  + range check + serializer landed (`LeanC/Literals.lean`,
+  `Tests/TestLiteralsExpr.lean` green); see `doc/next_task.md` and
+  `doc/implementation_plan_literals_expr.md` (T1 done; frictions in
+  `doc/stdlib_friction.md` F1–F2).
 - M2: String literal layout in generated C (null-termination, storage class).
 
 ## 3. Expressions
@@ -116,6 +121,12 @@ Proof obligations
 
 Milestones
 - M1: Define expression AST and type-checker.
+  Status (2026-09-18): in-progress — intrinsically typed `CExpr` stages
+  A→C + `exprBound` + `emitExpr` landed (`LeanC/Expr.lean`,
+  `LeanC/Variables.lean`, `LeanC/Stmt.lean` stubs,
+  `Tests/TestLiteralsExpr.lean` green); see `doc/next_task.md` and
+  `doc/implementation_plan_literals_expr.md` (T2–T5 done; frictions in
+  `doc/stdlib_friction.md` F3–F8).
 - M2: Implement code generation for pure arithmetic expressions and pointer arithmetic.
 - M3: Add expression-level proofs (preservation, bounds for pointer arithmetic where needed).
 

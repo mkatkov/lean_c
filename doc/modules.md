@@ -18,9 +18,10 @@ This document lists the primary Lean modules created to implement the roadmap an
 See `doc/roadmap.md` for the full project roadmap and milestones.
 
 - `LeanC.Types` - C type representations, sizes/alignment helpers, struct layouts.
-- `LeanC.Literals` - Literal AST nodes and serializers.
-- `LeanC.Expr` - Expression AST and type-checking utilities.
-- `LeanC.Stmt` - Statement AST and scoping/validation.
+- `LeanC.Literals` - Bound-carrying intrinsically typed literals (`CLiteral`, `litBound`, range check, `emitLit`).
+- `LeanC.Variables` - Typed de Bruijn references (`CVarRef`, `varBound`); producer-owned name→`idx` uniqueness.
+- `LeanC.Expr` - Intrinsically typed expressions stages A→C (`CExpr`, `exprBound`, `emitExpr`); `CNatIndex` pilot index.
+- `LeanC.Stmt` - Statement stubs (`assign/decl/return` bounds + emitters; `CAssign/CDecl/CReturn` markers).
 - `LeanC.Func` - Function representation, params, locals, and frame layout.
 - `LeanC.Modules` - Translation unit abstraction and symbol visibility.
 - `LeanC.Program` - Top-level program, linking, and pipeline orchestration.

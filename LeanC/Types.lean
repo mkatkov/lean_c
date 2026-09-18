@@ -101,6 +101,8 @@ inductive CCharType (α : Type) where
   | mk : CCharType α
 instance {α :Type} : CTypeSize (CCharType α) where
   size_of _ := 1
+instance {α : Type} : IsCType (CCharType α) where
+  isCType := True
 
 /-- CTypedef represents a C typedef definition. -/
 inductive CTypedef (α:Type u) [IsCType α]   where
