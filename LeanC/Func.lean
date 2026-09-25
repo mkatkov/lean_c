@@ -1,24 +1,21 @@
 import LeanC.Context
-import LeanC.Complexity
 
 /-!
-# Functions — signature + body bound + `declaredCost` check (T5 stub)
+# Functions — signature stub (T5)
 
-`call ↔ Func` cycle is broken by `declaredCost` (D4): `CExpr.call` takes
-`fname + declaredCost`, never a `Func` body. `Func` later discharges
-`bodyBound ≤ declaredCost` per func (`funcSound : BigO bodyBound …` —
-per-func `example` in `Tests`, suffices for draft).
+`call ↔ Func` cycle is broken by name (`CExpr.call` takes `fname`,
+never a `Func` body; `Expr` never imports `Func`).
+
+Costs (if any) are assigned per resource type via `CContext.setResource`
++ `CResource` instances in the caller's file.
 -/
 
 namespace LeanC
 
-/-- WHAT a function is (draft): name + worst body bound + advertised cost.
-`isFuncSound := True` is the placeholder; the real obligation per func is
-`BigO bodyBound.timeRep declaredCost.timeRep` (see `Tests`). -/
+/-- WHAT a function is (draft): name only. `isFuncSound := True` is the
+placeholder. -/
 structure CFunc where
   (fname : String)
-  (bodyBound : ResourceBound)
-  (declaredCost : ResourceBound)
   (isFuncSound : Prop := True)
 
 /-- C sketch: `void fname(void) { body }` (bodies are statement

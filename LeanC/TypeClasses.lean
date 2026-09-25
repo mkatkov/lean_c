@@ -43,4 +43,10 @@ class IsStructType (α : Type u) where
 instance (α : Type u ) [IsCType α ] : IsStructType α where
  isStructType := True
 
+/-- Marker for resource types. Any type representing a resource
+instantiates this class with `isResourceType := True`, following the
+`IsCType` convention. The type itself is the key — no strings. -/
+class CResourceType (R : Type u) where
+  isResourceType : Prop
+
 end LeanC

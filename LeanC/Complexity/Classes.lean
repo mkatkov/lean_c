@@ -1,0 +1,163 @@
+/-! Class markers: axes, `CComplexity`, base time/memory inductives,
+and `CComplexityRelationship` tables.
+
+Split out of `LeanC/Complexity.lean`. Pure declarations — no `BigO`
+dependency. `Lattice` maps these to tags; `Graph` reads the
+relationship tables as insertion obligations. -/
+namespace LeanC
+universe u
+
+/-- Which resource a class talks about.
+WHY two axes: time steps and live memory compose differently
+(sequence adds time but takes max memory), so one lattice cannot
+serve both; context carries one bound per axis. -/
+inductive ResourceAxis where
+| time : ResourceAxis
+| memory : ResourceAxis
+deriving DecidableEq, Repr
+
+/-- WHAT a complexity class is in Lean: a marker type indexed by
+axis. WHY a marker (not data): classes are *static* knowledge — which
+envelope a fragment claims — so each class is an empty inductive with
+one constructor; the meaning lives in the representative (`g1`,
+`glog`, …) and the `BigO` proofs, not in values. The `Prop` field
+is set to `True` on every instance (`isComplexity := True`), matching
+the marker-field style of the other typeclasses in this codebase.
+
+The three non-quantitative time classes sit *outside* Big-O, wrapping it:
+- `HALTS`: `∃ g computable, BigO cost g` — some finite bound exists,
+  unnamed. Every quantitative class refines it by instantiation.
+- `UNBOUND`: proven divergence (no finite `g` exists *plus* an
+  infinite-trace witness) — hence incomparable with the finite chain.
+- `UNDECIDABLE`: no claim at all — the unique top both forget to. -/
+class CComplexity (axis : ResourceAxis) (α : Type u) where
+  isComplexity : Prop
+
+-- WHAT the time lattice is (WHY each member exists):
+-- `Zero` = empty computation, bottom, every program is `≥` it.
+-- `O1` = constant-bounded fragment (single op, guarded dereference).
+-- `log` / `poly k` = quantitative insertions (halving loops, nested
+--   fixed loops); further degrees slot into the `poly` chain.
+-- `HALTS` = terminates, bound unnamed (ceiling of all quantitative).
+-- `UNBOUND` = provably diverges (server loop); incomparable with the
+--   finite chain, since divergence is neither cheaper nor pricier.
+-- `UNDECIDABLE` = unknown, default for unanalysed code, unique top.
+inductive ZeroTimeComplexity where | mk
+inductive TimeComplexity_O1 where | mk
+inductive TimeComplexity_HALTS where | mk
+inductive TimeComplexity_UNBOUND where | mk
+inductive TimeComplexity_UNDECIDABLE where | mk
+inductive TimeComplexity_log where | mk
+inductive TimeComplexity_poly (k : Nat) where | mk
+
+instance : CComplexity .time ZeroTimeComplexity where isComplexity := True
+instance : CComplexity .time TimeComplexity_O1 where isComplexity := True
+instance : CComplexity .time TimeComplexity_HALTS where isComplexity := True
+instance : CComplexity .time TimeComplexity_UNBOUND where isComplexity := True
+instance : CComplexity .time TimeComplexity_UNDECIDABLE where isComplexity := True
+instance : CComplexity .time TimeComplexity_log where isComplexity := True
+instance (k : Nat) : CComplexity .time (TimeComplexity_poly k) where isComplexity := True
+
+example : CComplexity .time ZeroTimeComplexity := inferInstance
+example : CComplexity .time TimeComplexity_O1 := inferInstance
+example : CComplexity .time TimeComplexity_HALTS := inferInstance
+example : CComplexity .time TimeComplexity_UNBOUND := inferInstance
+example : CComplexity .time TimeComplexity_UNDECIDABLE := inferInstance
+example (k : Nat) : CComplexity .time (TimeComplexity_poly k) := inferInstance
+
+-- WHAT the memory lattice is (mirror of time, WHY separate: memory
+-- composes by high-water mark, not addition, so it needs its own
+-- chain with the same shape):
+-- `Zero` = no allocation beyond the ambient frame (bottom).
+-- `O1` = one scalar local / one fixed block (`≤ K` cells).
+-- `BOUNDED` = finite but unnamed (analogue of `HALTS`).
+-- `GROWING` = grows without proven ceiling, e.g. unbounded append
+--   (analogue of `UNBOUND`, incomparable with the finite chain).
+-- `UNKNOWN` = unknown allocation, default/top.
+inductive ZeroMemoryComplexity where | mk
+inductive MemoryComplexity_O1 where | mk
+inductive MemoryComplexity_BOUNDED where | mk
+inductive MemoryComplexity_GROWING where | mk
+inductive MemoryComplexity_UNKNOWN where | mk
+
+instance : CComplexity .memory ZeroMemoryComplexity where isComplexity := True
+instance : CComplexity .memory MemoryComplexity_O1 where isComplexity := True
+instance : CComplexity .memory MemoryComplexity_BOUNDED where isComplexity := True
+instance : CComplexity .memory MemoryComplexity_GROWING where isComplexity := True
+instance : CComplexity .memory MemoryComplexity_UNKNOWN where isComplexity := True
+
+example : CComplexity .memory ZeroMemoryComplexity := inferInstance
+example : CComplexity .memory MemoryComplexity_O1 := inferInstance
+example : CComplexity .memory MemoryComplexity_BOUNDED := inferInstance
+example : CComplexity .memory MemoryComplexity_GROWING := inferInstance
+example : CComplexity .memory MemoryComplexity_UNKNOWN := inferInstance
+
+/-- WHAT the relationship tables are: each class declares its
+immediate predecessors / successors / equals. WHY honest (never `[]`
+by default): these lists *are* the lattice edges the graph reasons
+about — an empty list claims "no neighbour", which must be true
+(`UNBOUND` really has no finite predecessor). `equalTo` lists the
+classes equal to this one; every base class is distinct, so it is
+`[]` throughout.
+
+Intended time shape: `Zero < O1 < HALTS < UNDECIDABLE` with
+`UNBOUND < UNDECIDABLE` and `UNBOUND` otherwise incomparable; every
+later quantitative class (`log`, `poly k`, and anything added via
+`HasQuantRep`) sits between `O1` and `HALTS`. Memory mirrors it. -/
+class CComplexityRelationship (axis : ResourceAxis) (α : Type u)
+    [CComplexity axis α] where
+  minimalStrictlySmaller : List Type
+  minimalStrictlyLarger : List Type
+  equalTo : List Type
+
+instance : CComplexityRelationship .time ZeroTimeComplexity where
+  minimalStrictlySmaller := []
+  minimalStrictlyLarger := [TimeComplexity_O1]
+  equalTo := []
+instance : CComplexityRelationship .time TimeComplexity_O1 where
+  minimalStrictlySmaller := [ZeroTimeComplexity]
+  minimalStrictlyLarger := [TimeComplexity_HALTS]
+  equalTo := []
+instance : CComplexityRelationship .time TimeComplexity_log where
+  minimalStrictlySmaller := [TimeComplexity_O1]
+  minimalStrictlyLarger := [TimeComplexity_HALTS]
+  equalTo := []
+instance (k : Nat) : CComplexityRelationship .time (TimeComplexity_poly k) where
+  minimalStrictlySmaller := [TimeComplexity_O1]
+  minimalStrictlyLarger := [TimeComplexity_HALTS]
+  equalTo := []
+instance : CComplexityRelationship .time TimeComplexity_HALTS where
+  minimalStrictlySmaller := [TimeComplexity_O1]
+  minimalStrictlyLarger := [TimeComplexity_UNDECIDABLE]
+  equalTo := []
+instance : CComplexityRelationship .time TimeComplexity_UNBOUND where
+  minimalStrictlySmaller := []
+  minimalStrictlyLarger := [TimeComplexity_UNDECIDABLE]
+  equalTo := []
+instance : CComplexityRelationship .time TimeComplexity_UNDECIDABLE where
+  minimalStrictlySmaller := [TimeComplexity_HALTS, TimeComplexity_UNBOUND]
+  minimalStrictlyLarger := []
+  equalTo := []
+
+instance : CComplexityRelationship .memory ZeroMemoryComplexity where
+  minimalStrictlySmaller := []
+  minimalStrictlyLarger := [MemoryComplexity_O1]
+  equalTo := []
+instance : CComplexityRelationship .memory MemoryComplexity_O1 where
+  minimalStrictlySmaller := [ZeroMemoryComplexity]
+  minimalStrictlyLarger := [MemoryComplexity_BOUNDED]
+  equalTo := []
+instance : CComplexityRelationship .memory MemoryComplexity_BOUNDED where
+  minimalStrictlySmaller := [MemoryComplexity_O1]
+  minimalStrictlyLarger := [MemoryComplexity_UNKNOWN]
+  equalTo := []
+instance : CComplexityRelationship .memory MemoryComplexity_GROWING where
+  minimalStrictlySmaller := []
+  minimalStrictlyLarger := [MemoryComplexity_UNKNOWN]
+  equalTo := []
+instance : CComplexityRelationship .memory MemoryComplexity_UNKNOWN where
+  minimalStrictlySmaller := [MemoryComplexity_BOUNDED, MemoryComplexity_GROWING]
+  minimalStrictlyLarger := []
+  equalTo := []
+
+end LeanC

@@ -1,45 +1,32 @@
 import LeanC.Complexity
-import LeanC.ComplexityLinear
+import Examples.ComplexityLinear
 import LeanC.Context
-import LeanC.Processes
+import Examples.Resources
 
 open Lean IO
 
-/- WHAT this file is: the acceptance suite for the complexity system —
-one checked `example` per required property (compile = pass) plus a
-`test : IO UInt32` runner (exit `0` = pass) wired into `test.lean`.
-WHY both levels: `example`s machine-check the *proofs* (a broken edge
-fails `lake build`); the `IO` runner replays the *computed witnesses*
-(`log2 9 = 3`, …) so `./.lake/build/bin/test` independently confirms
-the numbers the proofs reason about. Sections mirror the proposal §8:
-kit → order → insertion → composition → extension. -/
+/- WHAT this file is: the acceptance suite for the complexity system +
+generic resources — one checked `example` per required property
+(compile = pass) plus a `test : IO UInt32` runner (exit `0` = pass)
+wired into `test.lean`. WHY both levels: `example`s machine-check the
+*proofs* (a broken edge fails `lake build`); the `IO` runner replays the
+*computed witnesses* (`log2 9 = 3`, …) so `./.lake/build/bin/test`
+independently confirms the numbers the proofs reason about. -/
 namespace TestComplexity
 
 open LeanC
 
-/-- Dummy context for tests. -/
+/-- Dummy context for tests (empty store: nothing exists). -/
 inductive DummyCtx where | mk
+
+/-- Empty `Type 1` (no constructors) for `DummyCtx`'s absent resources. -/
+inductive NoRes : Type 1 where
 
 instance : CContext DummyCtx where
   isCContext := True
-  extend ctx _ := ctx
-
-/-- Three O1 statements (single-op fragments). -/
-inductive StmtO1A where | mk
-inductive StmtO1B where | mk
-inductive StmtO1C where | mk
-
-instance : CStatement DummyCtx StmtO1A where
-  isStatementSound := True
-  stmtBound := { timeRep := g1, memRep := g1 }
-
-instance : CStatement DummyCtx StmtO1B where
-  isStatementSound := True
-  stmtBound := { timeRep := g1, memRep := g1 }
-
-instance : CStatement DummyCtx StmtO1C where
-  isStatementSound := True
-  stmtBound := { timeRep := g1, memRep := g1 }
+  resourceExists := (fun {_R} [_] _ => NoRes)
+  getResource := (fun {_R} [_] _ h => nomatch h)
+  setResource := (fun {_R} [_] ctx _ => ctx)
 
 /-- 1a. Big-O kit smoke checks (compile-time). -/
 example : BigO g1 g1 := BigO.refl _
@@ -87,44 +74,44 @@ example : BigO g1 glinear ∧ BigO glinear (gpoly 2) ∧ BigO glog glinear ∧
     TimeComplexity_O1 ∈ linearList ∧ TimeComplexity_HALTS ∈ linearList :=
   linear_inserted
 
-/-- 1d. Sequential + branching composition.
-WHY these two programs: the 2×`O1` sequence is the smallest program
-where constant folding matters (`1+1 = 2 =O 1` — without
-`const_le_one`, sequencing two constants would escape `O1`); the branch
-is the smallest program where the `max` rule + `+1` guard matter
-(`max(1,1)+1 = 2 =O 1`, and `Zero`-branches would still cost the guard).
-Both bounds are worst-case pairs `(time, mem)` per `ResourceBound`. -/
--- Two-O1 sequence has time `1+1=2 = O(1)` (const folding) and mem `max=1`.
-def seq2Bound : ResourceBound :=
-  seqBound
-    (CStatement.stmtBound (Γ := DummyCtx) (α := StmtO1A))
-    (CStatement.stmtBound (Γ := DummyCtx) (α := StmtO1B))
+/-! ## 1d. Type-keyed resources — no strings, no `Option`.
 
-example : BigO seq2Bound.timeRep g1 := by
-  apply BigO.const_le_one (K := 2)
-  intro n
-  exact Nat.le_refl _
+Keys are types distinguished by `CResourceType` (`Examples/Resources.lean`,
+not core). `resourceExists` is a `ResMem` witness in `Type` (head = newest,
+tail = older); `getResource` takes its witness and returns the correct
+type `R` directly — no `Option`, so callers prove properties about the
+value itself. Combining uses `CResource` instances
+(`seqCombine`/`branchCombine`).
+-/
 
-example : BigO seq2Bound.memRep g1 := by
-  have h : seq2Bound.memRep = g1 := rfl
-  rw [h]
-  exact BigO.refl _
+def existsAfterSet : CContext.resourceExists
+    (R := TimeCost) (CContext.setResource (R := TimeCost) emptyDraft ⟨fun _ => 3⟩) :=
+  draft_set_exists _ _ _
 
-def branchBoundAB : ResourceBound :=
-  branchBound
-    (CStatement.stmtBound (Γ := DummyCtx) (α := StmtO1A))
-    (CStatement.stmtBound (Γ := DummyCtx) (α := StmtO1B))
+example : CContext.getResource (CContext.setResource (R := TimeCost) emptyDraft ⟨fun _ => 3⟩)
+    (ResMem.head) = (⟨fun _ => 3⟩ : TimeCost) :=
+  draft_get_set_same _ _ _
 
--- Branch time is `max(1,1)+1 = 2 = O(1)`; mem is `max(1,1) = 1`.
-example : BigO branchBoundAB.timeRep g1 := by
-  apply BigO.const_le_one (K := 2)
-  intro n
-  exact Nat.le_refl _
+/-- Setting `TimeCost` preserves `ExactCount` looked up via an old tail
+witness (no type disequality needed — the witness selects old vs new). -/
+example (h : ResMem emptyDraft.rs ExactCount) :
+    CContext.getResource
+      (CContext.setResource (R := TimeCost) emptyDraft ⟨fun _ => 7⟩)
+      (ResMem.tail h) =
+      CContext.getResource emptyDraft h :=
+  draft_get_set_other _ _ h
 
-example : BigO branchBoundAB.memRep g1 := by
-  have h : branchBoundAB.memRep = g1 := rfl
-  rw [h]
-  exact BigO.refl _
+/-- Combining via instances: sequencing adds time; exact adds. -/
+example : CResource.seqCombine (⟨fun n => n + 1⟩ : TimeCost) ⟨fun n => n + 2⟩ =
+    ⟨fun n => (n + 1) + (n + 2)⟩ := rfl
+
+example : CResource.branchCombine (⟨5⟩ : ExactCount) ⟨7⟩ = ⟨7⟩ := rfl
+
+example : CResource.zero (R := ExactCount) = ⟨0⟩ := rfl
+
+/-- Nothing exists in the empty draft (no `ResMem []` witness). -/
+example : CContext.resourceExists (R := TimeCost) emptyDraft → False :=
+  fun h => nomatch h
 
 def assertEq (expected actual : String) : IO Bool :=
   if expected == actual then
@@ -139,14 +126,13 @@ def test : IO UInt32 := do
   ok := (← assertEq "1" (toString (Nat.log2 (1 + 1)))) && ok
   ok := (← assertEq "2" (toString (1 + 1))) && ok
   ok := (← assertEq "1" (toString (Nat.max 1 1))) && ok
-  -- kit + order + insertion + composition + extension all compiled
+  -- kit + order + insertion + extension all compiled
   -- (examples above); runtime confirms the computed witnesses
-  IO.println "OK: BigO.refl / trans / one_le_log / log_le_sq" 
+  IO.println "OK: BigO.refl / trans / one_le_log / log_le_sq"
   IO.println "OK: Zero < O1 < HALTS < UNDECIDABLE, UNBOUND < UNDECIDABLE, ¬(HALTS ≤ UNBOUND)"
   IO.println "OK: O1 < O_log < HALTS via can_insert (BigO evidence)"
   IO.println "OK: O_linear extension (own file, no base edits): O1/log < linear < poly2"
-  IO.println "OK: seq 2×O1 = O1 (const folding via BigO.add)"
-  IO.println "OK: branch max bound via BigO.max_bound"
+  IO.println "OK: type-keyed resources (no strings/Option): set/get/exists + seq/branch instances"
   if ok then
     IO.println "All complexity tests passed." *> pure 0
   else

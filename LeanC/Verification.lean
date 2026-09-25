@@ -1,21 +1,23 @@
 import LeanC.Context
-import LeanC.Complexity
 import LeanC.Expr
 
 /-!
 # Verification — preservation skeleton (T5 stub)
 
-Real preservation (`exprBound` soundness: evaluation preserves typing and
-stays inside the bound) needs Clight semantics (future work). Draft
-skeleton: the statement of what must be proved, with `True` placeholders
-so the pipeline typechecks and the stdlib pilot can state its obligations.
+Real preservation (evaluation preserves typing) needs Clight semantics
+(future work). Draft skeleton: the statement of what must be proved,
+with `True` placeholders so the pipeline typechecks and the stdlib pilot
+can state its obligations.
+
+Resource costs (if any) are per-type values in the context
+(`CContext.getResource` + `CResource` combine instances).
 -/
 
 namespace LeanC
 universe v
 
-/-- WHAT preservation must say: well-typed exprs stay well-typed and
-inside `exprBound` (time + memory). Draft placeholder (`True`). -/
+/-- WHAT preservation must say: well-typed exprs stay well-typed.
+Draft placeholder (`True`). -/
 def exprPreservationProp {Γ : Type v} [CContext Γ] {α : Type} [IsCType α]
     (_e : CExpr Γ α) : Prop :=
   True

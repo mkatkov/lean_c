@@ -3,8 +3,10 @@ import LeanC.Complexity
 /-!
 # Extension demo — `TimeComplexity_linear`, i.e. O(n)
 
-**WHAT this file is:** the worked answer to "are complexity classes
-extendable?". It adds a brand-new quantitative class — linear time
+**WHAT this file is:** an EXAMPLE (not core library) answering "are
+complexity classes extendable?". Lives under `Examples/`, not `LeanC/`:
+core is `LeanC.*`; this file only demonstrates the open `HasQuantRep`
+extension point. It adds a brand-new quantitative class — linear time
 (single pass over the input, e.g. `list map`, `fold`) — in its OWN
 file, with **zero edits to `LeanC/Complexity.lean`**. If this file
 compiles, extension works; it does (see `linear_inserted`).
