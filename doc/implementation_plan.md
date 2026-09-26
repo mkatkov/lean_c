@@ -1,5 +1,20 @@
 # Implementation Plan — Complexity Classes (Time & Memory)
 
+> HISTORICAL — DO NOT BUILD FROM THIS (2026-09-26 and 2026-09-27 reviews).
+> This plan's frozen interfaces (§2: `ResourceBound{timeRep,memRep}`,
+> `CStatement.stmtBound`, `seq_bound_add`/`branch_bound_max`,
+> 2–3-statement `SequentialProcess` test) were SUPERSEDED by the generic
+> extended resource model actually implemented: core `CResource` +
+> `HasCost` + `RStore` (`LeanC/Context.lean`), seam `costInClass` /
+> `costInZero` / `IsFiniteCost` (`LeanC/Complexity/Bridge.lean`), and
+> per-resource preservation in `Examples/Resources.lean`. The closed
+> insertion + open `HasQuantRep` design, `Zero` separation (no
+> `HasQuantRep` for `Zero`), `StrictQuantBelow` diagonals, memory
+> `log`/`poly` via the open path, and `graphInclusion` preorder are
+> documented in `LeanC/Complexity.lean` (facade) + `doc/next_task.md` §8.
+> Kept for history only; new work starts at `doc/next_task.md` +
+> `doc/implementation_plan_literals_expr.md`.
+
 Self-contained execution plan for implementing the complexity-class system.
 An agent with only this document + a checkout of the repo must be able to
 implement, build, and test its assigned task without reading the design

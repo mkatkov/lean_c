@@ -13,12 +13,15 @@ otherwise force `f = 0`). WHAT it gives: every lattice edge below is
 one of these facts, and composition (sequence/branch) reuses the kit
 instead of re-proving arithmetic.
 
-This is the `Nat → Nat` restriction of `Asymptotics.IsBigO Filter.atTop`
+This is the `Nat → Nat` analogue of `Asymptotics.IsBigO Filter.atTop`
 (Mathlib): the `max · 1` guards the `g n = 0` case (`Nat.log2 1 = 0`),
 the `N₀` is the `atTop` eventuality, the `c` is the Landau constant.
-If Mathlib is added later, replace this def by
-`Asymptotics.IsBigO Filter.atTop` behind the same `BigO` name;
-all ordering proofs use only the kit below. -/
+Interface-compatible in spirit only: Mathlib's `IsBigO` is norm-based
+over general types (needs `Nat → ℝ` coercions + norm lemmas), so a
+future migration would rework these proofs, not drop in behind the same
+name untouched. What stays stable across such a migration is the kit
+interface below (`refl`/`trans`/`const_le_one`/`add`/`max_bound`): all
+ordering proofs use only that. -/
 def BigO (f g : Nat → Nat) : Prop :=
   ∃ c N₀, ∀ n ≥ N₀, f n ≤ c * Nat.max (g n) 1
 

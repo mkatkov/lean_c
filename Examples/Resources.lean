@@ -108,7 +108,7 @@ theorem time_branch_preserves {a b : TimeCost} {ga gb : Nat → Nat}
     BigO.max_bound ha hb
   have hone : BigO (fun _ : Nat => 1) (fun _ : Nat => 1) := BigO.refl _
   have hadd := BigO.add hmax hone
-  simpa [CResource.seqCombine, CResource.branchCombine] using hadd
+  simpa [CResource.branchCombine] using hadd
 
 /-- Memory sequencing takes the high-water mark (max). -/
 theorem mem_seq_preserves {a b : MemCost} {ga gb : Nat → Nat}
@@ -124,9 +124,76 @@ theorem mem_branch_preserves {a b : MemCost} {ga gb : Nat → Nat}
       (fun n => Nat.max (ga n) (gb n)) :=
   BigO.max_bound ha hb
 
+/-- Energy sequencing adds (same shape as time: `seqCombine` is `+`). -/
+theorem energy_seq_preserves {a b : EnergyCost} {ga gb : Nat → Nat}
+    (ha : BigO a.val ga) (hb : BigO b.val gb) :
+    BigO (CResource.seqCombine a b).val (fun n => ga n + gb n) :=
+  BigO.add ha hb
+
+/-- Energy branching maxes (guard draws nothing extra). -/
+theorem energy_branch_preserves {a b : EnergyCost} {ga gb : Nat → Nat}
+    (ha : BigO a.val ga) (hb : BigO b.val gb) :
+    BigO (CResource.branchCombine a b).val
+      (fun n => Nat.max (ga n) (gb n)) :=
+  BigO.max_bound ha hb
+
+/-- Exact-count sequencing adds constant counts. `HasCost` extracts
+`fun _ => val`, so this is one `BigO.add` on constant functions. -/
+theorem exact_seq_preserves {a b : ExactCount} {ga gb : Nat → Nat}
+    (ha : BigO (fun _ : Nat => a.val) ga)
+    (hb : BigO (fun _ : Nat => b.val) gb) :
+    BigO (HasCost.cost (CResource.seqCombine a b))
+      (fun n => ga n + gb n) :=
+  BigO.add ha hb
+
+/-- Exact-count branching maxes constant counts. -/
+theorem exact_branch_preserves {a b : ExactCount} {ga gb : Nat → Nat}
+    (ha : BigO (fun _ : Nat => a.val) ga)
+    (hb : BigO (fun _ : Nat => b.val) gb) :
+    BigO (HasCost.cost (CResource.branchCombine a b))
+      (fun n => Nat.max (ga n) (gb n)) :=
+  BigO.max_bound ha hb
+
 /-- `zero` costs nothing pointwise. -/
 theorem time_zero_val : (CResource.zero (R := TimeCost)).val = gZero := rfl
 theorem mem_zero_val : (CResource.zero (R := MemCost)).val = gZero := rfl
+theorem energy_zero_val : (CResource.zero (R := EnergyCost)).val = gZero := rfl
+
+/-- `zero` values are `Zero`-exact (`costInZero`, not `costInClass` — see
+`Bridge`: `Zero` has no rep). -/
+theorem time_zero_in_zero : costInZero TimeCost (CResource.zero (R := TimeCost)) :=
+  time_zero_val
+
+theorem mem_zero_in_zero : costInZero MemCost (CResource.zero (R := MemCost)) :=
+  mem_zero_val
+
+theorem energy_zero_in_zero :
+    costInZero EnergyCost (CResource.zero (R := EnergyCost)) :=
+  energy_zero_val
+
+theorem exact_zero_in_zero :
+    costInZero ExactCount (CResource.zero (R := ExactCount)) := rfl
+
+/-- `Zero`-exact promotes to `O1` (via `Bridge.costInZero_to_o1_*`). -/
+theorem time_zero_in_o1 :
+    costInClass (axis := .time) TimeCost TimeComplexity_O1
+      (CResource.zero (R := TimeCost)) :=
+  costInZero_to_o1_time time_zero_in_zero
+
+/-- Constant-`1` time is `O1` but NOT `Zero`-exact: the value-level
+regression for the `BigO g1 gZero` collapse. If `Zero` were
+`BigO`-based, this would wrongly classify as `Zero`. -/
+theorem not_costInZero_time_one :
+    ¬ costInZero TimeCost (⟨fun _ => 1⟩ : TimeCost) := by
+  intro h
+  have h0 := congrFun h 0
+  simp [gZero] at h0
+
+theorem not_costInZero_mem_one :
+    ¬ costInZero MemCost (⟨fun _ => 1⟩ : MemCost) := by
+  intro h
+  have h0 := congrFun h 0
+  simp [gZero] at h0
 
 /-- Constant time values are `O1` (`≤ K` folds via `const_le_one`). -/
 theorem time_const_in_o1 (K : Nat) :
@@ -136,6 +203,21 @@ theorem time_const_in_o1 (K : Nat) :
 /-- Constant memory values are `O1`. -/
 theorem mem_const_in_o1 (K : Nat) :
     costInClass (axis := .memory) MemCost MemoryComplexity_O1 ⟨fun _ => K⟩ :=
+  BigO.const_le_one _ (fun _ => Nat.le_refl _)
+
+/-- Constant energy values are `O1` (classified on the time axis: the
+envelope is about the cost function shape, not the resource kind). -/
+theorem energy_const_in_o1 (K : Nat) :
+    costInClass (axis := .time) EnergyCost TimeComplexity_O1 ⟨fun _ => K⟩ :=
+  BigO.const_le_one _ (fun _ => Nat.le_refl _)
+
+/-- Constant exact counts are `O1` on either axis. -/
+theorem exact_const_in_o1_time (K : Nat) :
+    costInClass (axis := .time) ExactCount TimeComplexity_O1 ⟨K⟩ :=
+  BigO.const_le_one _ (fun _ => Nat.le_refl _)
+
+theorem exact_const_in_o1_mem (K : Nat) :
+    costInClass (axis := .memory) ExactCount MemoryComplexity_O1 ⟨K⟩ :=
   BigO.const_le_one _ (fun _ => Nat.le_refl _)
 
 /-- `O1 + O1 = O1` for time sequencing (const folding): two constant

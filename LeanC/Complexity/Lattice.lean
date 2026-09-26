@@ -27,14 +27,23 @@ deriving DecidableEq, Repr
 /-- WHAT `TagLE` is: the lattice order, read off as a table.
 WHY each row has the shape it does:
 - `Zero` edges are `True` BY STIPULATION, never `BigO` (see below).
-- quant–quant (`O1/log/poly`, both memories): the entry *is* the
+- quant–quant (`O1/log/poly` on both axes): the entry *is* the
   `BigO` fact, so `≤` over classes is sound by construction w.r.t. `=O`
-  inclusion — no edge by fiat.
+  inclusion — no edge by fiat. Memory reuses the same reps as time.
 - quant → `HALTS`/`BOUNDED`/`UNDECIDABLE`/`UNKNOWN`: `True` — every
   quantitative bound refines "some finite bound exists" / "unknown"
-  by forgetting detail (existential instantiation).
+  by forgetting detail. At value level this forgetting is the
+  existential `costInClass → IsFiniteCost` (`Bridge`: exhibiting the
+  class rep as the witness); the tag table records the class-level
+  shadow of that implication.
 - `HALTS`/`UNBOUND → UNDECIDABLE`, `BOUNDED`/`GROWING → UNKNOWN`,
-  reflexives: `True` — the qualitative spine.
+  reflexives: `True` — the qualitative spine. These are STIPULATED:
+  under total `Nat → Nat` costs every cost is finite
+  (`every_cost_finite` in `Bridge`, via `BigO.refl`), so `UNBOUND`
+  (divergence) has no cost-function inhabitants yet — it awaits a
+  partial-cost/trace model. Tag-level `UNBOUND ≤ UNDECIDABLE` records
+  the intended forgetting; value-level divergence is `IsDivergentCost`,
+  currently empty by `no_divergent_cost`.
 - everything else: `False` — incomparability (`HALTS ≰ UNBOUND`,
   `UNBOUND ≰ HALTS`), cross-axis (`time ≰ mem`), qual → quant
   (forgetting never runs backwards). The catch-all `_, _ => False`
@@ -46,15 +55,17 @@ equates `0` and `1` — both `bigO_zero_le_one : BigO gZero g1` AND
 `bigO_one_le_zero : BigO g1 gZero` hold (see `Growth`). Ordering `Zero`
 via `BigO` would therefore collapse the bottom (`O1 ≤ Zero` would be
 provable). `TagLE` stores `Zero ≤ X` as `True` (empty computation is
-below everything by definition) and exposes NO `X ≤ Zero` row for
-quantitative `X` (catch-all `False`), so `O1 ≤ Zero` stays unprovable
-even though `BigO g1 gZero` holds. `QuantLE` still equates them (both
-`BigO` directions hold) — lattice strictness `Zero < O1` lives ONLY in
-tags, not in reps.
+below everything finite by definition) and exposes NO `X ≤ Zero` row
+for quantitative `X` (catch-all `False`), so `O1 ≤ Zero` stays
+unprovable even though `BigO g1 gZero` holds. `Zero` has NO
+`HasQuantRep` (see `Quant`): there is no `QuantLE` involving `Zero` at
+all — lattice strictness `Zero < O1` lives ONLY in tags, never in reps.
 WHY no shadow nodes: the order is derived on the fly from this table
-+ `BigO.trans` (`TagLE_trans` checks all 12³ cases), so splitting
-`A < B` into `A < X < B` only *adds* rows — existing types are
-untouched. -/
++ `BigO.trans` (`TagLE_trans` checks all cases by brute force), so
+splitting `A < B` into `A < X < B` only *adds* rows — existing types are
+untouched. Relationship tables (`Classes`) keep listing the qualitative
+ceiling as the declared successor; the real order chains through the
+new rows. -/
 def TagLE : ComplexityTag → ComplexityTag → Prop
 | .zeroTime, .zeroTime => True
 | .zeroTime, .o1Time => True
@@ -117,7 +128,10 @@ kinds of entries (`BigO`, `True`, `False`), and each triple falls into
 exactly one bucket — `True` goal (`trivial`), all-`BigO`
 (`BigO.trans`), or contradictory hypothesis (`False.elim`). No clever
 rank function needed; the case split *is* the proof that the table is
-a preorder. -/
+a preorder. Memory quantitative classes (`log`/`poly` on the memory
+axis) deliberately have NO tags — they use the open `HasQuantRep` path
+(see `Quant`), so the closed tag count stays at 12 and this proof stays
+tractable. -/
 theorem TagLE_trans {a b c : ComplexityTag} :
     TagLE a b → TagLE b c → TagLE a c := by
   intro h1 h2
@@ -159,7 +173,9 @@ instance : HasTag MemoryComplexity_UNKNOWN where tag := .unknownMem
 of the pair, kept so `can_insert` witnesses are *constructed*
 (`TagOf.o1Time`, …) rather than inferred. One constructor per base
 class; the `k` parameter on `polyTime` means all degrees are covered
-by one constructor. -/
+by one constructor. Memory quantitative classes (`log`/`poly`) have no
+tags by design — they insert via the open `HasQuantRep` path (see
+`Quant`), which needs no closed inductive. -/
 inductive TagOf : Type → ComplexityTag → Prop where
 | zeroTime : TagOf ZeroTimeComplexity .zeroTime
 | o1Time : TagOf TimeComplexity_O1 .o1Time
@@ -191,10 +207,13 @@ if someone edits `TagLE` inconsistently, these fail to compile.
 `bigO_zero_le_one`, since `bigO_one_le_zero` also holds and would
 collapse the bottom; see `TagLE` docs). Quantitative edges carry their
 `BigO` proof term (`bigO_one_le_log`); qualitative edges are `trivial`
-(`True` by forgetting). The `¬ (HALTS ≤ UNBOUND)` proof is `simp`
-reducing both sides to `¬ False` — the catch-all `_, _ => False` doing
-real work. So is `¬ (O1 ≤ Zero)`: no `o1 → zero` row exists even though
-`BigO g1 gZero` holds — the separation made visible. -/
+(`True` by forgetting — the value-level shadow is
+`costInClass → IsFiniteCost` in `Bridge`, while `UNBOUND`-involving
+edges remain stipulated pending a partial-cost model). Incomparability
+proofs are `simp` reducing both sides to `¬ False` — the catch-all
+`_, _ => False` doing real work. So is `¬ (O1 ≤ Zero)`: no `o1 → zero`
+row exists even though `BigO g1 gZero` holds — the separation made
+visible. -/
 theorem complexityLE_zero_o1 : ComplexityLE ZeroTimeComplexity TimeComplexity_O1 :=
   trivial
 
@@ -232,15 +251,53 @@ theorem complexityLE_growing_unknown :
   trivial
 
 theorem complexityLE_halts_not_unbound :
-    ¬ ComplexityLE TimeComplexity_HALTS TimeComplexity_UNBOUND := by
-  simp [ComplexityLE, TagLE]
+    ¬ ComplexityLE TimeComplexity_HALTS TimeComplexity_UNBOUND :=
+  fun h => h
+
+/-- Symmetric incomparability: `UNBOUND ≰ HALTS` (divergence is not a
+finite bound). Both directions are `¬ False`; the pair locks the
+"side branch" shape of the time lattice. -/
+theorem complexityLE_unbound_not_halts :
+    ¬ ComplexityLE TimeComplexity_UNBOUND TimeComplexity_HALTS :=
+  fun h => h
+
+/-- Memory mirror of time incomparability: `BOUNDED` (finite, unnamed)
+and `GROWING` (known-unbounded) are mutually incomparable, both below
+`UNKNOWN`. -/
+theorem complexityLE_bounded_not_growing :
+    ¬ ComplexityLE MemoryComplexity_BOUNDED MemoryComplexity_GROWING :=
+  fun h => h
+
+theorem complexityLE_growing_not_bounded :
+    ¬ ComplexityLE MemoryComplexity_GROWING MemoryComplexity_BOUNDED :=
+  fun h => h
+
+/-- `Zero` is incomparable with the divergent branch: no
+`zero → unbound` / `zero → growing` rows exist (catch-all `False`).
+An empty computation is below the finite chain by stipulation, but it
+is neither above nor below known-divergence. -/
+theorem complexityLE_zero_not_unbound :
+    ¬ ComplexityLE ZeroTimeComplexity TimeComplexity_UNBOUND :=
+  fun h => h
+
+theorem complexityLE_unbound_not_zero :
+    ¬ ComplexityLE TimeComplexity_UNBOUND ZeroTimeComplexity :=
+  fun h => h
+
+theorem complexityLE_zeroMem_not_growing :
+    ¬ ComplexityLE ZeroMemoryComplexity MemoryComplexity_GROWING :=
+  fun h => h
 
 /-- `O1 ≰ Zero`: no `o1 → zero` row exists (catch-all `False`), even
 though `bigO_one_le_zero : BigO g1 gZero` holds. This theorem is the
 machine-checked witness that `Zero` separation works: the `BigO`
 collapse does NOT leak into the lattice. -/
 theorem complexityLE_o1_not_zero :
-    ¬ ComplexityLE TimeComplexity_O1 ZeroTimeComplexity := by
-  simp [ComplexityLE, TagLE]
+    ¬ ComplexityLE TimeComplexity_O1 ZeroTimeComplexity :=
+  fun h => h
+
+theorem complexityLE_o1Mem_not_zeroMem :
+    ¬ ComplexityLE MemoryComplexity_O1 ZeroMemoryComplexity :=
+  fun h => h
 
 end LeanC

@@ -216,6 +216,21 @@ time classes are therefore defined in terms of it, not inside it:
 Same pattern on the memory axis with `cost` = peak live cells as a
 function of input size.
 
+> IMPLEMENTATION NOTE (2026-09-27 review fix): formalized as far as total
+> costs allow. `HALTS`/`BOUNDED` = `IsFiniteCost` (`∃ g, BigO cost g` —
+> `Computable` dropped pending a computability import;
+> `LeanC/Complexity/Bridge.lean`: `costInHalts`/`costInBounded` +
+> `costInClass_to_halts/bounded` derive the quant→qual tag rows).
+> `UNBOUND`/`GROWING` = `IsDivergentCost` (`¬ ∃ g, …`), EMPTY under total
+> `Nat → Nat` costs (`every_cost_finite`/`no_divergent_cost` via
+> `BigO.refl`): true divergence needs a future partial-cost/trace model,
+> so `UNBOUND`-involving tag edges stay stipulated. `Zero` has no rep at
+> all (see `HasQuantRep` NOTE): value-level `Zero` is pointwise
+> `costInZero` (`cost = gZero`), with `not_costInZero_time_one` locking
+> that constant-`1` is `O1` but not `Zero`. Strict `<` needs
+> `StrictQuantBelow` (`BigO` + reverse `¬ BigO` — tag `≠` is syntactic
+> freshness only).
+
 ### 3.5 Why this simplifies ordering proofs (worked mini-example)
 
 Without Big-O, each insertion (`log`, `poly`, …) would need bespoke
@@ -426,9 +441,21 @@ New `Tests/TestComplexity.lean` (name flexible) with `def test : IO UInt32`:
    `UNBOUND < UNDECIDABLE`, `¬ (HALTS ≤ UNBOUND)`.
 3. One intermediate insertion: `O1 < O_log < HALTS` via `can_insert`,
    evidence = the two `BigO` proofs from (1).
-4. One `SequentialProcess` of 2–3 `O1` statements with proven bound `O1`
-   (constant folding via `BigO.add` + const corollary) and one binary
-   branch with proven bound `max(branch bounds)` (via `BigO.max`).
+4. SUPERSEDED (2026-09-26 design change, locked 2026-09-27): no
+   `stmtBound` on `SequentialProcess` by design — bounds are per-resource
+   values in context (`CResource` + `HasCost`), not a hardwired pair.
+   Covered instead by `Tests/TestComplexity.lean` §§1d–1g: type-keyed
+   `RStore` set/get, per-resource preservation (`time_seq_preserves`,
+   `mem_*`, `energy_*`, `exact_*` via `BigO.add`/`max_bound`),
+   `O1+O1=O1` + branch-`O1` (`time_seq_o1`, `time_branch_o1`),
+   `costInZero` vs `O1` regression (`not_costInZero_time_one`),
+   finite/divergent ceiling (`costInClass_to_halts/bounded`,
+   `every_cost_finite`, `no_divergent_cost`), strictness
+   (`StrictQuantBelow`), memory open-path insertion
+   (`mem_log_inserted`, `mem_poly_zero_inserted`), and runtime-computed
+   combines (seq `13`, branch `2`, max `7`, exact `12`). The old
+   `SequentialProcess`-bound acceptance is retained here for history;
+   executable acceptance is `doc/next_task.md` §7.
 5. Wired into `test.lean:runAll` alongside `TestMain.test`.
 
 ## 9. Decision log (to fill at review)

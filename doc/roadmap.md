@@ -260,16 +260,23 @@ Acceptance criteria
 Milestones
 - M1: Prove correctness for a small function.
 - M2: Add a cost model and prove a small algorithm's complexity.
-  Status (2026-09-26): in-progress — generic extended resource model
+  Status (2026-09-27): in-progress — generic extended resource model
   (`CResource` + `HasCost` + `RStore`, `LeanC/Context.lean`) bridged to
-  classes via `costInClass`/`costInClass_mono` (`LeanC/Complexity/Bridge.lean`)
-  with per-resource preservation (`time_seq_preserves`, `mem_*`, `O1+O1=O1`,
-  `Examples/Resources.lean`); base lattices with `Zero` separated from `BigO`
-  (`bigO_one_le_zero`, `complexityLE_o1_not_zero`), `poly 0 = O1`
-  (`equalTo`, `can_insert_poly_zero`), unified insertion (closed
-  `can_insert_complexity_class_to_graph` + open `can_insert_quant_to_list`,
-  `O_log`/`poly`/`linear`); see `doc/next_task.md` and
-  `doc/implementation_plan.md` (T1–T8 done, `Tests/TestComplexity.lean` green).
+  classes via `costInClass`/`costInZero`/`IsFiniteCost`
+  (`LeanC/Complexity/Bridge.lean`: `costInClass_mono`,
+  `costInClass_to_halts/bounded`, `no_divergent_cost`) with per-resource
+  preservation (`time_seq_preserves`, `mem_*`, `energy_*`, `exact_*`,
+  `O1+O1=O1`, `Examples/Resources.lean`); base lattices with `Zero`
+  separated from `BigO` (no `HasQuantRep` for `Zero`, `costInZero`,
+  `not_costInZero_time_one`, `complexityLE_o1_not_zero` + symmetric
+  incomparabilities), `poly 0 = O1` on both axes (`equalTo`,
+  `can_insert_poly_zero`, `mem_poly_zero_inserted`, no-funext),
+  strictness (`StrictQuantBelow`, `not_bigO_poly_le_one/sq_le_log`),
+  insertion (closed `can_insert_complexity_class_to_graph` for time base
+  + open `can_insert_quant_to_list` for `O_log`/`poly`/`linear`/memory
+  `log`/`poly`); `graphInclusion` preorder documents knowledge growth;
+  see `doc/next_task.md` (`doc/implementation_plan.md` is historical —
+  do not build from it; `Tests/TestComplexity.lean` green).
 
 ## Extras and Notes
 - Targeting Clight/CompCert semantics is highly beneficial: reuse proven semantics and style of proofs from CompCert papers and code.

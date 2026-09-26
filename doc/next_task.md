@@ -170,19 +170,30 @@ Suggested split: A: T1+T2 | B: T3+T4 | C: T5+T6+T7+T8. Total 3–5 focused days.
 Status: implemented (2026-09-17), extended (2026-09-26). Design: `doc/complexity_proposal.md`;
 execution record: `doc/implementation_plan.md` (historical — T1–T9 done,
 do not reuse its task numbers for the new work).
-Delivered: local `BigO` kit, 5+5 base classes over two axes, `TagLE`/
-`QuantLE` ordering with `Zero` separated from `BigO`
-(`bigO_one_le_zero`, `complexityLE_o1_not_zero`), `poly 0 = O1`
-(`equalTo`, `quant_poly0_le_o1`), unified insertion (closed
-`can_insert_complexity_class_to_graph` + open `can_insert_quant_to_list`)
-+ `O_log`/`poly` insertion, `O_linear` extension in its own file,
-generic `CResource`/`HasCost` + `costInClass` bridge with per-resource
-preservation (`time_seq_preserves`, `O1+O1=O1`),
-`Tests/TestComplexity.lean` green. Old open questions (O1 = `≤ K`,
+Delivered: local `BigO` kit, 7+7 base classes over two axes (time
+`Zero/O1/log/poly/HALTS/UNBOUND/UNDECIDABLE`, memory
+`Zero/O1/log/poly/BOUNDED/GROWING/UNKNOWN`), `TagLE` (12 closed tags)/
+`QuantLE` ordering with `Zero` separated from `BigO` (NO `HasQuantRep`
+for `Zero`, pointwise `costInZero`, `not_costInZero_time_one`,
+`complexityLE_o1_not_zero` + symmetric incomparabilities), `poly 0 = O1`
+on both axes (`equalTo`, `quant_poly0_le_o1`, no-funext), strictness
+(`StrictQuantBelow`, `not_bigO_poly_le_one/sq_le_log/sq_le_linear`,
+`strict_o1_linear/linear_poly2`), insertion (closed
+`can_insert_complexity_class_to_graph` for time base + open
+`can_insert_quant_to_list` for `O_log`/`poly`/`linear`/memory
+`log`/`poly` with centralized base memberships) + `graphInclusion`
+preorder, `O_linear` extension in its own file,
+generic `CResource`/`HasCost` + `costInClass`/`costInZero`/`IsFiniteCost`
+bridge with per-resource preservation (`time_seq_preserves`, `mem_*`,
+`energy_*`, `exact_*`, `O1+O1=O1`),
+`Tests/TestComplexity.lean` green (compile-time examples + runtime-computed
+combines). Old open questions (O1 = `≤ K`,
 two graphs + paired bound, loop stub) are resolved as stated there;
 note: the old paired `ResourceBound`/`seqBound`/`branchBound`/`stmtBound`
 design was superseded by the generic `CResource` + bridge (no hardwired
-pair in core).
+pair in core). Review fixes (2026-09-27): issues 1–8 closed as stated in
+facade `LeanC/Complexity.lean`; `doc/implementation_plan.md` bannered
+historical.
 
 ## 9. Open questions (for this task, not blockers)
 

@@ -143,6 +143,17 @@ theorem bigO_log_le_poly {k : Nat} (hk : 1 ≤ k) : BigO glog (gpoly k) := by
     _ ≤ (gpoly k) n := h2
     _ ≤ Nat.max ((gpoly k) n) 1 := Nat.le_max_left _ _
 
+/-- WHY `n ≤ n^k` for `1 ≤ k`: constants sit below every non-trivial
+polynomial degree. Factored helper so `bigO_log_le_poly` above and the
+strictness facts below (`¬ poly ≤ O1`) share one proof. Zero case is
+`0 ≤ 0^k`; succ case is `n = n^1 ≤ n^k`. -/
+theorem self_le_pow (n k : Nat) (hk : 1 ≤ k) : n ≤ n ^ k := by
+  match n with
+  | Nat.zero => exact Nat.zero_le _
+  | Nat.succ m =>
+    calc m + 1 = (m + 1) ^ 1 := by simp
+      _ ≤ (m + 1) ^ k := Nat.pow_le_pow_right (by omega) hk
+
 /-- WHY strictness matters: `O1 < O_log` is *strict* — log is
 genuinely bigger than constant. Proof idea: for any claimed constant
 `c`, pick `n = max N₀ 2^(c+1)`; then `2^(c+1) ≤ n+1`, so by `le_log2`,
@@ -159,6 +170,91 @@ theorem not_bigO_log_le_one : ¬ BigO glog g1 := by
     rw [Nat.le_log2 (by omega)]
     calc 2 ^ (c + 1) ≤ n := Nat.le_max_right _ _
       _ ≤ n + 1 := Nat.le_succ _
+  omega
+
+/-- WHY `poly k ≰ O1` for `1 ≤ k`: polynomial growth is genuinely above
+constant. Proof: assume `n^k ≤ c`, pick `n = max N₀ (c+1)`; then
+`n ≤ n^k ≤ c` (via `self_le_pow`) contradicts `n ≥ c+1`. Gives the
+strict half of `O1 < poly k`. Memory reuses the same reps, so the same
+fact serves both axes. -/
+theorem not_bigO_poly_le_one {k : Nat} (hk : 1 ≤ k) :
+    ¬ BigO (gpoly k) g1 := by
+  intro ⟨c, N₀, h⟩
+  let n := Nat.max N₀ (c + 1)
+  have hn0 : n ≥ N₀ := Nat.le_max_left _ _
+  have hnc : n ≥ c + 1 := Nat.le_max_right _ _
+  have hle := h n hn0
+  simp only [gpoly, g1, Nat.max_self, Nat.mul_one] at hle
+  -- hle : n ^ k ≤ c
+  have hle2 : n ≤ c := Nat.le_trans (self_le_pow n k hk) hle
+  omega
+
+/-- WHY `n² ≰ log`: quadratic growth is genuinely above log. Proof:
+`log2(n+1) ≤ n`, so `max (log) 1 ≤ n` for `n ≥ 1`; the assumed bound
+`n² ≤ c * max (log) 1` then gives `n² ≤ c * n`, i.e. `(c+1)*n ≤ n*n`
+forces `c*n+n ≤ c*n` and hence `n ≤ 0`, contradicting `n ≥ c+1 ≥ 1`.
+Gives the strict half of `log < poly₂`. -/
+theorem not_bigO_sq_le_log : ¬ BigO (gpoly 2) glog := by
+  intro ⟨c, N₀, h⟩
+  let n := Nat.max N₀ (Nat.max (c + 1) 1)
+  have hn0 : n ≥ N₀ := Nat.le_max_left _ _
+  have hnc : n ≥ c + 1 :=
+    Nat.le_trans (Nat.le_max_left _ _) (Nat.le_max_right _ _)
+  have hn1 : n ≥ 1 :=
+    Nat.le_trans (Nat.le_max_right _ _) (Nat.le_max_right _ _)
+  have hle := h n hn0
+  simp only [gpoly, glog] at hle
+  -- hle : n ^ 2 ≤ c * max (log2 (n+1)) 1
+  have hlog : Nat.log2 (n + 1) ≤ n := log_succ_le_self n
+  have hmax_le : Nat.max (Nat.log2 (n + 1)) 1 ≤ n := by
+    apply Nat.max_le.mpr
+    constructor
+    · exact hlog
+    · exact hn1
+  have hmul : c * Nat.max (Nat.log2 (n + 1)) 1 ≤ c * n :=
+    Nat.mul_le_mul_left c hmax_le
+  have hle2 : n ^ 2 ≤ c * n := Nat.le_trans hle hmul
+  have hsq : n ^ 2 = n * n := Nat.pow_two n
+  rw [hsq] at hle2
+  -- (c+1) * n ≤ n * n since c+1 ≤ n
+  have hmul2 : (c + 1) * n ≤ n * n :=
+    Nat.mul_le_mul_right n hnc
+  have hexpand : (c + 1) * n = c * n + n := by
+    rw [Nat.add_mul, Nat.one_mul]
+  rw [hexpand] at hmul2
+  -- c*n + n ≤ c*n forces n ≤ 0
+  have hle3 : c * n + n ≤ c * n + 0 :=
+    by simpa using Nat.le_trans hmul2 hle2
+  have hn0' : n ≤ 0 := Nat.le_of_add_le_add_left hle3
+  omega
+
+/-- WHY `n² ≰ n` (pointwise reps): quadratic strictly above linear.
+Same `(c+1)*n ≤ n*n` squeeze as above with `max n 1 = n`. Used for the
+`linear < poly₂` strict edge in `Examples/ComplexityLinear`. -/
+theorem not_bigO_sq_le_linear : ¬ BigO (gpoly 2) (fun n => n) := by
+  intro ⟨c, N₀, h⟩
+  let n := Nat.max N₀ (Nat.max (c + 1) 1)
+  have hn0 : n ≥ N₀ := Nat.le_max_left _ _
+  have hnc : n ≥ c + 1 :=
+    Nat.le_trans (Nat.le_max_left _ _) (Nat.le_max_right _ _)
+  have hn1 : n ≥ 1 :=
+    Nat.le_trans (Nat.le_max_right _ _) (Nat.le_max_right _ _)
+  have hle := h n hn0
+  simp only [gpoly] at hle
+  -- hle : n ^ 2 ≤ c * max n 1
+  have hmax : Nat.max n 1 = n := Nat.max_eq_left hn1
+  rw [hmax] at hle
+  -- hle : n ^ 2 ≤ c * n
+  have hsq : n ^ 2 = n * n := Nat.pow_two n
+  rw [hsq] at hle
+  have hmul2 : (c + 1) * n ≤ n * n :=
+    Nat.mul_le_mul_right n hnc
+  have hexpand : (c + 1) * n = c * n + n := by
+    rw [Nat.add_mul, Nat.one_mul]
+  rw [hexpand] at hmul2
+  have hle3 : c * n + n ≤ c * n + 0 :=
+    by simpa using Nat.le_trans hmul2 hle
+  have hn0' : n ≤ 0 := Nat.le_of_add_le_add_left hle3
   omega
 
 end LeanC
