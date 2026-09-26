@@ -92,11 +92,12 @@ Proof obligations
 
 Milestones
 - M1: Integer and char literal representation and serializer.
-  Status (2026-09-18): in-progress — bound-carrying `CLiteral` + `litBound`
+  Status (2026-09-26): in-progress — intrinsically typed `CLiteral`
   + range check + serializer landed (`LeanC/Literals.lean`,
-  `Tests/TestLiteralsExpr.lean` green); see `doc/next_task.md` and
-  `doc/implementation_plan_literals_expr.md` (T1 done; frictions in
-  `doc/stdlib_friction.md` F1–F2).
+  `Tests/TestLiteralsExpr.lean` green); costs flow per-resource via
+  `HasCost`/`costInClass` bridge (no hardwired `litBound` in core);
+  see `doc/next_task.md` and `doc/implementation_plan_literals_expr.md`
+  (T1 done; frictions in `doc/stdlib_friction.md` F1–F2).
 - M2: String literal layout in generated C (null-termination, storage class).
 
 ## 3. Expressions
@@ -121,12 +122,13 @@ Proof obligations
 
 Milestones
 - M1: Define expression AST and type-checker.
-  Status (2026-09-18): in-progress — intrinsically typed `CExpr` stages
-  A→C + `exprBound` + `emitExpr` landed (`LeanC/Expr.lean`,
+  Status (2026-09-26): in-progress — intrinsically typed `CExpr` stages
+  A→C + `emitExpr` landed (`LeanC/Expr.lean`,
   `LeanC/Variables.lean`, `LeanC/Stmt.lean` stubs,
-  `Tests/TestLiteralsExpr.lean` green); see `doc/next_task.md` and
-  `doc/implementation_plan_literals_expr.md` (T2–T5 done; frictions in
-  `doc/stdlib_friction.md` F3–F8).
+  `Tests/TestLiteralsExpr.lean` green); costs flow per-resource via
+  `HasCost`/`costInClass` bridge (no hardwired `exprBound` in core);
+  see `doc/next_task.md` and `doc/implementation_plan_literals_expr.md`
+  (T2–T5 done; frictions in `doc/stdlib_friction.md` F3–F8).
 - M2: Implement code generation for pure arithmetic expressions and pointer arithmetic.
 - M3: Add expression-level proofs (preservation, bounds for pointer arithmetic where needed).
 
@@ -258,10 +260,16 @@ Acceptance criteria
 Milestones
 - M1: Prove correctness for a small function.
 - M2: Add a cost model and prove a small algorithm's complexity.
-  Status (2026-09-17): in-progress — cost model + base lattices +
-  `O_log` insertion + seq/branch composition landed; see
-  `doc/next_task.md` and `doc/implementation_plan.md` (T1–T8 done,
-  `Tests/TestComplexity.lean` green).
+  Status (2026-09-26): in-progress — generic extended resource model
+  (`CResource` + `HasCost` + `RStore`, `LeanC/Context.lean`) bridged to
+  classes via `costInClass`/`costInClass_mono` (`LeanC/Complexity/Bridge.lean`)
+  with per-resource preservation (`time_seq_preserves`, `mem_*`, `O1+O1=O1`,
+  `Examples/Resources.lean`); base lattices with `Zero` separated from `BigO`
+  (`bigO_one_le_zero`, `complexityLE_o1_not_zero`), `poly 0 = O1`
+  (`equalTo`, `can_insert_poly_zero`), unified insertion (closed
+  `can_insert_complexity_class_to_graph` + open `can_insert_quant_to_list`,
+  `O_log`/`poly`/`linear`); see `doc/next_task.md` and
+  `doc/implementation_plan.md` (T1–T8 done, `Tests/TestComplexity.lean` green).
 
 ## Extras and Notes
 - Targeting Clight/CompCert semantics is highly beneficial: reuse proven semantics and style of proofs from CompCert papers and code.

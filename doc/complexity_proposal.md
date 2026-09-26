@@ -284,6 +284,17 @@ there is exactly one documented mechanism.
 
 ## 5. Context and composition
 
+> IMPLEMENTATION NOTE (2026-09-26): this section's paired-`ResourceBound`
+> sketch was superseded. Core (`LeanC/Context.lean`) is generic —
+> `CResource` combine ops + `HasCost` extraction + type-keyed `RStore` —
+> with no hardwired bound pair; classes are met in
+> `LeanC/Complexity/Bridge.lean` via `costInClass v C := BigO (cost v) rep`
+> (+ `costInClass_mono`), and per-resource composition is proved per
+> resource (`time_seq_preserves`, `time_branch_preserves`,
+> `mem_seq_preserves`, `O1+O1=O1` in `Examples/Resources.lean`). Read
+> `ResourceBound`/`stmtBound`/`seqBound`/`branchBound` below as that bridge,
+> not as struct fields.
+
 ### 5.1 Bounds in context
 
 Extend `CContext` (currently just `isCContext` + a placeholder

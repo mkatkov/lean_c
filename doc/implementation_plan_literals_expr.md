@@ -32,10 +32,12 @@ pretty-printer, benchmarks.
 - Toolchain: `lean-toolchain` = `leanprover/lean4:v4.23.0`.
 - Deps: none (`lake-manifest.json`: `packages: []`). **Do not add any.**
 - Done, do not redesign: `BigO` kit (`refl/trans/const_le_one/add/max_bound`),
-  `gZero/g1/glog/gpoly/glinear`, `ResourceBound{timeRep,memRep : ℕ → ℕ}`
-  (`LeanC/Context.lean`), `seqBound/branchBound` + `seq_bound_add/
-  seq_bound_max_mem/branch_bound_max_time/branch_bound_max_mem`
-  (`LeanC/Processes.lean`), `CArray.isAllocated/within_bounds`,
+  `gZero/g1/glog/gpoly/glinear`, generic `CResource` + `HasCost` + `RStore`
+  (`LeanC/Context.lean`) bridged via `costInClass` (`LeanC/Complexity/Bridge.lean`)
+  with per-resource preservation in `Examples/Resources.lean`
+  (NOTE 2026-09-26: supersedes the old paired
+  `ResourceBound`/`seqBound`/`branchBound`/`stmtBound` sketch — core stays
+  generic, no hardwired pair), `CArray.isAllocated/within_bounds`,
   `CGlobalStaticMemoryBlock/CArrayType` (`LeanC/Arrays.lean`),
   `IsCType/CTypeSize`, `CIntType/CCharType/CFloatType/CPointerType`
   (`LeanC/Types.lean`), `CVarScope` (`LeanC/Scopes.lean`),

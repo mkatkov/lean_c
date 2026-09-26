@@ -16,15 +16,18 @@ Next: when stdlib needs a float table, add `tableLitFloat` (or
 `{β} → Vector β n` with `[IsCType β] [CTypeSize β]` + `Inhabited β` for
 `size_of`) and compare elaboration pain; keep one ctor until then.
 
-## F2 — `litBound` cells ignore `CTypeSize.size_of`
-Where: `LeanC/Literals.lean:41` (`litBound`), doc comment on size factor.
+## F2 — literal `cells` ignore `CTypeSize.size_of`
+Where: `LeanC/Literals.lean:33` (`tableLit` cells), `LeanC/Context.lean`
+(`LiteralPoolEntry.cells`).
 Pain: `CTypeSize.size_of : α → Nat` needs a *value*, but `strLit`/`tableLit`
 only have types (`β : Type`) + lengths. `cells = s.length` / `n` assumes
 width 1.
 Choice: `cells = len` (bytes == cells for char; `n` cells for tables).
+Costs are assigned per resource via `HasCost`/`costInClass`
+(`Examples/Resources.lean` bridge), not via a hardwired `litBound`.
 Next: thread an explicit `cellSize : Nat` (or `Inhabited β` witness) into
-`tableLit`/`LiteralPoolEntry` when codegen needs byte counts; `poolBound`
-(`LeanC/Context.lean`) already sums `cells`, so only the producer changes.
+`tableLit`/`LiteralPoolEntry` when codegen needs byte counts; only the
+producer changes.
 
 ## F3 — `index` uses `CGlobalStaticMemoryBlock`, not `CArrayType`
 Where: `LeanC/Expr.lean:75` (`CExpr.index`), `LeanC/Arrays.lean:234`
@@ -58,9 +61,9 @@ and update the six `CArray` instances, *or* move all indices to `Type 0`.
 Keep `CConstIndex` as the `CArrayType` *size descriptor* (where `Type 1`
 is required) regardless.
 
-## F5 — `call` takes pre-folded `argsBound + argStrs`, not typed args
-Where: spec `List (Σ α, CExpr Γ α)` → `LeanC/Expr.lean:75`
-(`CExpr.call`: `fname + argStrs + argsBound + declaredCost`).
+## F5 — `call` takes `argStrs`, not typed args (no `argsBound` in core)
+Where: spec `List (Σ α, CExpr Γ α)` → `LeanC/Expr.lean`
+(`CExpr.call`: `fname + argStrs`).
 Pain (two layers):
 1. `Sigma` nesting with local `Γ` is kernel-rejected ("nested inductive
    parameters cannot contain local variables").
@@ -68,20 +71,18 @@ Pain (two layers):
    the inductive but breaks dependent elimination for `deref`/`index`
    (input index computed from result index — supported singly, not
    mutually; verified by minimised prototypes).
-Choice: `call` stores `argStrs : List String` (for `emitExpr`) +
-`argsBound : ResourceBound` (pre-folded by the caller via `exprBound`).
-Pilot folds correctly by construction (`helloArgsBound :=
-litBound helloLit`, `Tests/TestLiteralsExpr.lean:119`); the link is not
-machine-checked.
+Choice: `call` stores `argStrs : List String` (for `emitExpr`) only.
+Call-site costs flow per-resource when needed (`HasCost`/`costInClass`
+bridge in `Examples/Resources.lean`); no hardwired `argsBound : ResourceBound`
+in core (the old paired-`ResourceBound` design was superseded 2026-09-26).
 Next: restore typed args via the plan's fallback — untyped `RawExpr` +
 `check : RawExpr → Option (Σ α, CExpr Γ α)` shim, or `ULift`-ed mutual
 encoding — when call-site checking (arity/type mismatch) is needed. Never
-import `Func` from `Expr` to fix this (`declaredCost` stays the seam).
+import `Func` from `Expr` to fix this (name stays the seam).
 
 ## F6 — GADT ctors need equality proofs (`deref`/`index`/`addr`)
-Where: `LeanC/Expr.lean:75` (`deref`/`index`/`addr` carry `γ = …` proofs,
-like `CLiteral`), `@`-patterns in `exprBound`/`emitExpr`
-(`LeanC/Expr.lean:101`, `:161`).
+Where: `LeanC/Expr.lean` (`deref`/`index`/`addr` carry `γ = …` proofs,
+like `CLiteral`), `@`-patterns in `emitExpr`.
 Pain: with ≥3 GADT ctors, even innocent dot-patterns (`.deref e _`)
 fail dependent elimination ("motive … mismatch") — verified: `lit+deref`
 alone works, adding `cast` *or* `addr` breaks `deref`. Implicit/instance
@@ -95,31 +96,30 @@ struct field base); add a "new ctor" checklist to `doc/modules.md` if a
 third contributor hits it.
 
 ## F7 — `assign/decl/return` live in `Stmt`, not `Processes`
-Where: `LeanC/Stmt.lean:34` (`assignBound`/`declBound`/`returnBound`),
-`LeanC/Processes.lean:29` (`CStatement`, untouched).
+Where: `LeanC/Stmt.lean` (`CAssign`/`CDecl`/`CReturn` markers + emitters),
+`LeanC/Processes.lean` (`CStatement` soundness-only, untouched).
 Pain: plan asked for `Processes.lean` additions, but `Expr → Processes`
-(`seqBound`/`branchBound` in `tern`/`call`, `LeanC/Expr.lean:101`) forbids
-`Processes → Expr` (cycle). `Context ↔ Processes` would also cycle if
-`DraftCtx.extend` imported `seqBound` (inlined instead,
-`LeanC/Context.lean` instance).
+would forbid `Processes → Expr` (cycle). `Context ↔ Processes` would also
+cycle if the context imported statement-level combinators.
 Choice: `Stmt → Expr + Processes`, `Func → Stmt`, leaves stay leaves.
+Costs stay per-resource (`HasCost`/`costInClass` bridge in
+`Examples/Resources.lean`); no hardwired `seqBound`/`branchBound` in core.
 `rg appendContext` still clean (no `appendContext` reintroduced).
-Next: keep `Stmt` separate permanently; if statement lists must live in
-`Processes` (`SequentialProcess`), move `seqBound`/`branchBound` down to
-`Context` (leaf) so both can share without a cycle.
+Next: keep `Stmt` separate permanently; per-resource preservation lemmas
+already live with their resources (`time_seq_preserves`, …).
 
-## F8 — `CStatement.stmtBound` is per-type, not per-value
-Where: `LeanC/Stmt.lean:34` (value-level `assignBound` etc. vs marker
-`CAssign`/`CDecl`/`CReturn` with `O(1)` instances).
-Pain: `stmtBound` belongs to the *type* (`CStatement Γ α`), but
-`assign rhs`'s cost depends on the *value* `rhs` (`seqBound (exprBound
-rhs) …`). A faithful instance needs the bound (or the expr) in the type.
-Choice: draft split — value functions for the pilot's `worst_bound`,
-marker types (`isStatementSound := True`, `(O1,O1)`) as `SequentialProcess`
-placeholders.
-Next: value-dependent statements via `Σ (b : ResourceBound), …` payloads
-in the statement type, or move bounds out of the class (parallel
-`stmtBoundOf : stmt → ResourceBound` function). Required before loop
+## F8 — statement bounds are per-value, not per-type
+Where: `LeanC/Stmt.lean` (value-level costs vs marker
+`CAssign`/`CDecl`/`CReturn` with `True` soundness).
+Pain: a `CStatement Γ α` bound on the *type* cannot depend on the *value*
+(e.g. `assign rhs` cost depends on `rhs`). A faithful per-type bound would
+need the bound (or the expr) in the type.
+Choice: draft split — markers (`isStatementSound := True`) as
+`SequentialProcess` placeholders; real costs flow per-value through
+`HasCost`/`costInClass` (`Examples/Resources.lean`: `time_seq_preserves`,
+`costInClass_mono`).
+Next: value-dependent statements via `Σ` payloads in the statement type,
+or parallel `costOf : stmt → R` functions per resource. Required before loop
 variants (which need per-iteration bounds).
 
 ## F9 — `deref` is practically unusable (generic pointer `isAllocated = False`)

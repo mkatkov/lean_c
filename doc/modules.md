@@ -18,10 +18,20 @@ This document lists the primary Lean modules created to implement the roadmap an
 See `doc/roadmap.md` for the full project roadmap and milestones.
 
 - `LeanC.Types` - C type representations, sizes/alignment helpers, struct layouts.
-- `LeanC.Literals` - Bound-carrying intrinsically typed literals (`CLiteral`, `litBound`, range check, `emitLit`).
-- `LeanC.Variables` - Typed de Bruijn references (`CVarRef`, `varBound`); producer-owned name→`idx` uniqueness.
-- `LeanC.Expr` - Intrinsically typed expressions stages A→C (`CExpr`, `exprBound`, `emitExpr`); `CNatIndex` pilot index.
-- `LeanC.Stmt` - Statement stubs (`assign/decl/return` bounds + emitters; `CAssign/CDecl/CReturn` markers).
+- `LeanC.Context` - Generic extended resource model: `CResource` combine ops,
+  `HasCost` extraction, type-keyed `RStore` + `CContext` get/set, `DraftCtx` + pool.
+- `LeanC.Complexity/*` - Cost classes: `BigO` kit, reps + growth facts
+  (`Zero` separated from `BigO`; `poly 0 = O1`), `TagLE`/`QuantLE` order,
+  closed `can_insert_complexity_class_to_graph` + open `can_insert_quant_to_list`,
+  `costInClass` bridge (`Bridge`).
+- `Examples/Resources` - Concrete resources (`TimeCost`/`MemCost`/`EnergyCost`/`ExactCount`)
+  + `HasCost` instances + `BigO` preservation (`time_seq_preserves`, `mem_*`, `O1+O1=O1`).
+- `Examples/ComplexityLinear` - Open-extension demo (`O(n)` via `can_insert_quant_to_list`, zero base edits).
+- `LeanC.Literals` - Intrinsically typed literals (`CLiteral`, range check, `emitLit`);
+  costs assigned per resource via `setResource` (no hardwired bounds).
+- `LeanC.Variables` - Typed de Bruijn references (`CVarRef`); producer-owned name→`idx` uniqueness.
+- `LeanC.Expr` - Intrinsically typed expressions stages A→C (`CExpr`, `emitExpr`); `CNatIndex` pilot index.
+- `LeanC.Stmt` - Statement stubs (`CAssign/CDecl/CReturn` markers + emitters; `Stmt → Expr + Processes`, leaves stay leaves).
 - `LeanC.Func` - Function representation, params, locals, and frame layout.
 - `LeanC.Modules` - Translation unit abstraction and symbol visibility.
 - `LeanC.Program` - Top-level program, linking, and pipeline orchestration.

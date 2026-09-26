@@ -26,7 +26,8 @@ deriving DecidableEq, Repr
 
 /-- WHAT `TagLE` is: the lattice order, read off as a table.
 WHY each row has the shape it does:
-- quant–quant (`Zero/O1/log/poly`, both memories): the entry *is* the
+- `Zero` edges are `True` BY STIPULATION, never `BigO` (see below).
+- quant–quant (`O1/log/poly`, both memories): the entry *is* the
   `BigO` fact, so `≤` over classes is sound by construction w.r.t. `=O`
   inclusion — no edge by fiat.
 - quant → `HALTS`/`BOUNDED`/`UNDECIDABLE`/`UNKNOWN`: `True` — every
@@ -39,15 +40,26 @@ WHY each row has the shape it does:
   (forgetting never runs backwards). The catch-all `_, _ => False`
   is load-bearing: it is what makes `¬ (HALTS ≤ UNBOUND)` provable
   (`¬ False`).
+
+WHY `Zero` is separated from `BigO`: the `max · 1` guard in `BigO`
+equates `0` and `1` — both `bigO_zero_le_one : BigO gZero g1` AND
+`bigO_one_le_zero : BigO g1 gZero` hold (see `Growth`). Ordering `Zero`
+via `BigO` would therefore collapse the bottom (`O1 ≤ Zero` would be
+provable). `TagLE` stores `Zero ≤ X` as `True` (empty computation is
+below everything by definition) and exposes NO `X ≤ Zero` row for
+quantitative `X` (catch-all `False`), so `O1 ≤ Zero` stays unprovable
+even though `BigO g1 gZero` holds. `QuantLE` still equates them (both
+`BigO` directions hold) — lattice strictness `Zero < O1` lives ONLY in
+tags, not in reps.
 WHY no shadow nodes: the order is derived on the fly from this table
 + `BigO.trans` (`TagLE_trans` checks all 12³ cases), so splitting
 `A < B` into `A < X < B` only *adds* rows — existing types are
 untouched. -/
 def TagLE : ComplexityTag → ComplexityTag → Prop
-| .zeroTime, .zeroTime => BigO gZero gZero
-| .zeroTime, .o1Time => BigO gZero g1
-| .zeroTime, .logTime => BigO gZero glog
-| .zeroTime, .polyTime k => BigO gZero (gpoly k)
+| .zeroTime, .zeroTime => True
+| .zeroTime, .o1Time => True
+| .zeroTime, .logTime => True
+| .zeroTime, .polyTime _ => True
 | .zeroTime, .haltsTime => True
 | .zeroTime, .undecidableTime => True
 | .o1Time, .o1Time => BigO g1 g1
@@ -67,8 +79,8 @@ def TagLE : ComplexityTag → ComplexityTag → Prop
 | .unboundTime, .unboundTime => True
 | .unboundTime, .undecidableTime => True
 | .undecidableTime, .undecidableTime => True
-| .zeroMem, .zeroMem => BigO gZero gZero
-| .zeroMem, .o1Mem => BigO gZero g1
+| .zeroMem, .zeroMem => True
+| .zeroMem, .o1Mem => True
 | .zeroMem, .boundedMem => True
 | .zeroMem, .unknownMem => True
 | .o1Mem, .o1Mem => BigO g1 g1
@@ -86,14 +98,14 @@ instance : LE ComplexityTag where
 
 theorem TagLE_refl (t : ComplexityTag) : TagLE t t := by
   match t with
-  | .zeroTime => show BigO gZero gZero; exact BigO.refl _
+  | .zeroTime => trivial
   | .o1Time => show BigO g1 g1; exact BigO.refl _
   | .logTime => show BigO glog glog; exact BigO.refl _
   | .polyTime _ => show BigO _ _; exact BigO.refl _
   | .haltsTime => trivial
   | .unboundTime => trivial
   | .undecidableTime => trivial
-  | .zeroMem => show BigO gZero gZero; exact BigO.refl _
+  | .zeroMem => trivial
   | .o1Mem => show BigO g1 g1; exact BigO.refl _
   | .boundedMem => trivial
   | .growingMem => trivial
@@ -175,12 +187,16 @@ def ComplexityLE (a b : Type) [HasTag a] [HasTag b] : Prop :=
 /-- WHAT follows: each base edge as a checked theorem (not a comment).
 WHY theorems, not comments: `example`/`theorem` is machine-checked —
 if someone edits `TagLE` inconsistently, these fail to compile.
-Quantitative edges carry their `BigO` proof term (`bigO_zero_le_one`,
-`bigO_one_le_log`); qualitative edges are `trivial` (`True` by
-forgetting). The `¬ (HALTS ≤ UNBOUND)` proof is `simp` reducing both
-sides to `¬ False` — the catch-all `_, _ => False` doing real work. -/
+`Zero` edges are `trivial` (bottom by stipulation — deliberately NOT
+`bigO_zero_le_one`, since `bigO_one_le_zero` also holds and would
+collapse the bottom; see `TagLE` docs). Quantitative edges carry their
+`BigO` proof term (`bigO_one_le_log`); qualitative edges are `trivial`
+(`True` by forgetting). The `¬ (HALTS ≤ UNBOUND)` proof is `simp`
+reducing both sides to `¬ False` — the catch-all `_, _ => False` doing
+real work. So is `¬ (O1 ≤ Zero)`: no `o1 → zero` row exists even though
+`BigO g1 gZero` holds — the separation made visible. -/
 theorem complexityLE_zero_o1 : ComplexityLE ZeroTimeComplexity TimeComplexity_O1 :=
-  bigO_zero_le_one
+  trivial
 
 theorem complexityLE_o1_halts : ComplexityLE TimeComplexity_O1 TimeComplexity_HALTS :=
   trivial
@@ -201,7 +217,7 @@ theorem complexityLE_log_halts : ComplexityLE TimeComplexity_log TimeComplexity_
 
 theorem complexityLE_zeroMem_o1Mem :
     ComplexityLE ZeroMemoryComplexity MemoryComplexity_O1 :=
-  bigO_zero_le_one
+  trivial
 
 theorem complexityLE_o1Mem_bounded :
     ComplexityLE MemoryComplexity_O1 MemoryComplexity_BOUNDED :=
@@ -217,6 +233,14 @@ theorem complexityLE_growing_unknown :
 
 theorem complexityLE_halts_not_unbound :
     ¬ ComplexityLE TimeComplexity_HALTS TimeComplexity_UNBOUND := by
+  simp [ComplexityLE, TagLE]
+
+/-- `O1 ≰ Zero`: no `o1 → zero` row exists (catch-all `False`), even
+though `bigO_one_le_zero : BigO g1 gZero` holds. This theorem is the
+machine-checked witness that `Zero` separation works: the `BigO`
+collapse does NOT leak into the lattice. -/
+theorem complexityLE_o1_not_zero :
+    ¬ ComplexityLE TimeComplexity_O1 ZeroTimeComplexity := by
   simp [ComplexityLE, TagLE]
 
 end LeanC

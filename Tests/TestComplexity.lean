@@ -1,4 +1,5 @@
 import LeanC.Complexity
+import LeanC.Complexity.Bridge
 import Examples.ComplexityLinear
 import LeanC.Context
 import Examples.Resources
@@ -36,7 +37,9 @@ example : BigO g1 (fun n => n ^ 2) :=
   BigO.trans bigO_one_le_log bigO_log_le_sq
 example : BigO glog (gpoly 2) := bigO_log_le_poly (by decide : 1 ≤ 2)
 
-/-- 1b. Base order checks derived from Big-O. -/
+/-- 1b. Base order checks derived from Big-O. `Zero` edges are by
+stipulation (`trivial`), NOT `bigO_zero_le_one` — `bigO_one_le_zero`
+also holds, so `BigO` cannot order the bottom (see `Lattice`). -/
 example : ComplexityLE ZeroTimeComplexity TimeComplexity_O1 :=
   complexityLE_zero_o1
 example : ComplexityLE TimeComplexity_O1 TimeComplexity_HALTS :=
@@ -47,6 +50,10 @@ example : ComplexityLE TimeComplexity_UNBOUND TimeComplexity_UNDECIDABLE :=
   complexityLE_unbound_undecidable
 example : ¬ ComplexityLE TimeComplexity_HALTS TimeComplexity_UNBOUND :=
   complexityLE_halts_not_unbound
+/-- Separation witness: `O1 ≰ Zero` even though `BigO g1 gZero` holds. -/
+example : ¬ ComplexityLE TimeComplexity_O1 ZeroTimeComplexity :=
+  complexityLE_o1_not_zero
+example : BigO g1 gZero := bigO_one_le_zero
 
 /-- 1c. Intermediate insertion `O1 < O_log < HALTS` via `can_insert`.
 WHY this is the extensibility bar: a new class is accepted only with
@@ -56,9 +63,25 @@ example : ComplexityLE TimeComplexity_O1 TimeComplexity_log :=
   complexityLE_o1_log
 example : ComplexityLE TimeComplexity_log TimeComplexity_HALTS :=
   complexityLE_log_halts
+example : can_insert_complexity_class_to_graph (axis := .time)
+    (τ := TimeComplexity_log) baseGraph :=
+  can_insert_log
+-- Deprecated typo spelling still resolves (alias).
 example : can_insert_complexity_class_to_grapth (axis := .time)
     (τ := TimeComplexity_log) baseGraph :=
   can_insert_log
+
+/-- `poly` insertion (`1 ≤ k`) and the degenerate `poly 0 = O1` case. -/
+example : can_insert_complexity_class_to_graph (axis := .time)
+    (τ := TimeComplexity_poly 2) baseGraph :=
+  can_insert_poly (by decide : 1 ≤ 2)
+example : can_insert_complexity_class_to_graph (axis := .time)
+    (τ := TimeComplexity_poly 0) baseGraph :=
+  can_insert_poly_zero
+example : QuantLE (axis := .time) (TimeComplexity_poly 0) TimeComplexity_O1 :=
+  quant_poly0_le_o1
+example : QuantLE (axis := .time) TimeComplexity_O1 (TimeComplexity_poly 0) :=
+  quant_o1_le_poly0
 
 /-- 1c'. Extension without base edits: `O_linear` from
 `ComplexityLinear.lean` (separate file, zero base changes) slots
@@ -71,7 +94,7 @@ example : QuantLE (axis := .time) TimeComplexity_log TimeComplexity_linear :=
 example : QuantLE (axis := .time) TimeComplexity_linear (TimeComplexity_poly 2) :=
   linear_below_poly2
 example : BigO g1 glinear ∧ BigO glinear (gpoly 2) ∧ BigO glog glinear ∧
-    TimeComplexity_O1 ∈ linearList ∧ TimeComplexity_HALTS ∈ linearList :=
+    can_insert_quant_to_list (axis := .time) TimeComplexity_linear linearList :=
   linear_inserted
 
 /-! ## 1d. Type-keyed resources — no strings, no `Option`.
@@ -113,6 +136,31 @@ example : CResource.zero (R := ExactCount) = ⟨0⟩ := rfl
 example : CContext.resourceExists (R := TimeCost) emptyDraft → False :=
   fun h => nomatch h
 
+/-! ## 1e. Bridge: resource values in classes + preservation.
+
+`costInClass` is `BigO (cost v) rep`; preservation is one `BigO.add` /
+`max_bound` per combine. These examples lock the extended resource model:
+time adds, memory maxes, `O1+O1=O1`, branch `O1` stays `O1`. -/
+
+example : costInClass (axis := .time) TimeCost TimeComplexity_O1 ⟨fun _ => 3⟩ :=
+  time_const_in_o1 3
+example : costInClass (axis := .memory) MemCost MemoryComplexity_O1 ⟨fun _ => 5⟩ :=
+  mem_const_in_o1 5
+example : costInClass (axis := .time) TimeCost TimeComplexity_O1
+    (CResource.seqCombine ⟨fun _ => 1⟩ ⟨fun _ => 2⟩) :=
+  time_seq_o1 1 2
+example : costInClass (axis := .time) TimeCost TimeComplexity_O1
+    (CResource.branchCombine ⟨fun _ => 1⟩ ⟨fun _ => 1⟩) :=
+  time_branch_o1
+example {a b : TimeCost} {ga gb : Nat → Nat}
+    (ha : BigO a.val ga) (hb : BigO b.val gb) :
+    BigO (CResource.seqCombine a b).val (fun n => ga n + gb n) :=
+  time_seq_preserves ha hb
+example {a b : MemCost} {ga gb : Nat → Nat}
+    (ha : BigO a.val ga) (hb : BigO b.val gb) :
+    BigO (CResource.seqCombine a b).val (fun n => Nat.max (ga n) (gb n)) :=
+  mem_seq_preserves ha hb
+
 def assertEq (expected actual : String) : IO Bool :=
   if expected == actual then
     IO.println s!"OK: {actual}" *> pure true
@@ -129,10 +177,11 @@ def test : IO UInt32 := do
   -- kit + order + insertion + extension all compiled
   -- (examples above); runtime confirms the computed witnesses
   IO.println "OK: BigO.refl / trans / one_le_log / log_le_sq"
-  IO.println "OK: Zero < O1 < HALTS < UNDECIDABLE, UNBOUND < UNDECIDABLE, ¬(HALTS ≤ UNBOUND)"
-  IO.println "OK: O1 < O_log < HALTS via can_insert (BigO evidence)"
+  IO.println "OK: Zero < O1 < HALTS < UNDECIDABLE, UNBOUND < UNDECIDABLE, ¬(HALTS ≤ UNBOUND), ¬(O1 ≤ Zero)"
+  IO.println "OK: O1 < O_log < HALTS via can_insert (BigO evidence); poly 2 + poly 0 = O1"
   IO.println "OK: O_linear extension (own file, no base edits): O1/log < linear < poly2"
   IO.println "OK: type-keyed resources (no strings/Option): set/get/exists + seq/branch instances"
+  IO.println "OK: bridge costInClass + preservation: time adds, memory maxes, O1+O1=O1"
   if ok then
     IO.println "All complexity tests passed." *> pure 0
   else

@@ -23,8 +23,10 @@ pool threading, or bound rules hurt gets logged in `doc/stdlib_friction.md`.
 
 ## 2. Why now
 
-- Complexity draft is done (base lattices + `O_log`/`O_linear` + `seqBound`/
-  `branchBound` + `Tests/TestComplexity.lean` green). The cost model has
+- Complexity draft is done (base lattices with `Zero` separated from `BigO`
+  + `O_log`/`O_linear`/`poly` + unified insertion +
+  generic `CResource`/`HasCost` + `costInClass` bridge with per-resource
+  preservation + `Tests/TestComplexity.lean` green). The cost model has
   nothing to count yet.
 - `LeanC/Expr.lean` is a 9-line stub (`litInt | var Name | add`) with no
   types, no bounds, no serializer. `LeanC/Variables.lean` is empty.
@@ -38,9 +40,9 @@ pool threading, or bound rules hurt gets logged in `doc/stdlib_friction.md`.
 
 | # | Decision | Rationale |
 |---|---|---|
-| D1 | Literals split by cost: pure values (`int/char/float/label`) are `(ZeroTime, ZeroMem)`; allocating literals (string/table, initialized static block requiring load) are `(O1Time, O1Mem)` with `mem = const cells` | Some literals are free values, some require load/allocation. Both still fold via `BigO.const_le_one`. Downgrade path: if codegen shows load is free, change to `(Zero, O1)` — one-line `litBound` change |
+| D1 | Literals split by cost: pure values (`int/char/float/label`) cost `0`; allocating literals (string/table, initialized static block requiring load) cost `O1` time + `const cells` memory | Some literals are free values, some require load/allocation. Both still fold via `BigO.const_le_one` through the `HasCost`/`costInClass` bridge. Downgrade path: if codegen shows load is free, change the resource value — one-line caller change, no core edits |
 | D2 | Literal memory = global-static + `O1Mem` | String/table literals lower to `CGlobalStaticMemoryBlock` / `CArrayType.global_static` (`LeanC/Arrays.lean`); context carries a literal pool (list of live static objects) — the "extra slot in references of memory objects" |
-| D3 | Expression subset = pure arith **+ memory access + ternary + calls**, staged A→C | A: `lit/var/unop/binop/cast`; B: `deref/addr/index/field` (with `isAllocated`/`within_bounds` proof args); C: `tern` (guard + `branchBound`) + `call` (with `declaredCost`). A must land first so a buildable prefix always exists |
+| D3 | Expression subset = pure arith **+ memory access + ternary + calls**, staged A→C | A: `lit/var/unop/binop/cast`; B: `deref/addr/index/field` (with `isAllocated`/`within_bounds` proof args); C: `tern` (guard + branch join) + `call` (by name, never importing `Func`). A must land first so a buildable prefix always exists |
 | D4 | Intrinsically typed AST | `CLiteral α [IsCType α]`, `CExpr Γ α [IsCType α]`. Heavier constructors, but serializer + checker collapse into one. Fallback if blocked: keep typed core, add untyped `RawExpr` + `check` shim (never downgrade core) |
 
 Conventions (inherited, still binding): `Prop`-valued class fields; no
@@ -75,6 +77,14 @@ Out of scope (follow-ups):
   benchmarks.
 
 ## 5. Frozen interfaces (exact names — agents build against these)
+
+> NOTE (2026-09-26): the `ResourceBound`/`litBound`/`varBound`/`poolBound`/
+> `exprBound` names below are the ORIGINAL plan sketch. Implementation landed
+> with the generic extended resource model instead (core: `CResource` +
+> `HasCost` + `RStore`; seam: `costInClass` in `LeanC/Complexity/Bridge.lean`;
+> per-resource preservation in `Examples/Resources.lean`) — no hardwired
+> bound pair in `LeanC/`. Read `XBound` below as "per-resource `HasCost`
+> value + `costInClass` membership", not a struct field.
 
 ```lean
 -- Literals (LeanC/Literals.lean, new)
@@ -141,27 +151,38 @@ Suggested split: A: T1+T2 | B: T3+T4 | C: T5+T6+T7+T8. Total 3–5 focused days.
 
 1. `lake build` clean; `rg -n "sorry|axiom|admit" LeanC Tests` empty for new code;
    `./.lake/build/bin/test` exits `0` with `TestLiteralsExpr.test` in `runAll`.
-2. Pure literals `(0,0)`, allocating literals `(O1,O1)` with `BigO` lemmas;
-   context pool present (`extendWithLit`, `poolBound`).
-3. Expression stages A–C present with `exprBound` lemmas (`1+2 =O 1`,
-   `tern` guard `max+1 =O 1`, `call` sums `declaredCost`); `aget` requires a
+2. Pure vs allocating literals distinguished with `BigO` lemmas via the
+   bridge (`time_const_in_o1`/`mem_const_in_o1` shape — per-resource
+   `HasCost` values in `O1`, not a hardwired `litBound` field);
+   context pool present (`extendWithLit`, `LiteralPoolEntry`).
+3. Expression stages A–C present with per-resource preservation
+   (`time_seq_preserves`/`mem_*` via `BigO.add`/`max_bound`;
+   `O1+O1=O1`, branch `max+1=O1`); `aget` requires a
    `within_bounds` proof (no proof = no term).
-4. `Func/Modules/Program` stubs present with `call.declaredCost` linkage
-   (`funcSound : BigO bodyBound declaredCost`); stdlib pilot (3–4 bounds)
+4. `Func/Modules/Program` stubs present with name-based `call` linkage
+   (no `Func` import from `Expr`); stdlib pilot (3–4 emitters)
    present; `doc/stdlib_friction.md` logs every friction point.
 5. This file + executable plan + `doc/roadmap.md` §§2–3 statuses agree
    (fix doc if code chose a documented-flexible name).
 
 ## 8. Archive — previous task (complexity classes)
 
-Status: implemented (2026-09-17). Design: `doc/complexity_proposal.md`;
+Status: implemented (2026-09-17), extended (2026-09-26). Design: `doc/complexity_proposal.md`;
 execution record: `doc/implementation_plan.md` (historical — T1–T9 done,
 do not reuse its task numbers for the new work).
 Delivered: local `BigO` kit, 5+5 base classes over two axes, `TagLE`/
-`QuantLE` ordering, `can_insert` + `O_log` insertion, `O_linear` extension
-in its own file, `ResourceBound` + `seqBound`/`branchBound` + lemmas,
+`QuantLE` ordering with `Zero` separated from `BigO`
+(`bigO_one_le_zero`, `complexityLE_o1_not_zero`), `poly 0 = O1`
+(`equalTo`, `quant_poly0_le_o1`), unified insertion (closed
+`can_insert_complexity_class_to_graph` + open `can_insert_quant_to_list`)
++ `O_log`/`poly` insertion, `O_linear` extension in its own file,
+generic `CResource`/`HasCost` + `costInClass` bridge with per-resource
+preservation (`time_seq_preserves`, `O1+O1=O1`),
 `Tests/TestComplexity.lean` green. Old open questions (O1 = `≤ K`,
-two graphs + paired bound, loop stub) are resolved as stated there.
+two graphs + paired bound, loop stub) are resolved as stated there;
+note: the old paired `ResourceBound`/`seqBound`/`branchBound`/`stmtBound`
+design was superseded by the generic `CResource` + bridge (no hardwired
+pair in core).
 
 ## 9. Open questions (for this task, not blockers)
 

@@ -20,6 +20,19 @@ class CResource (R : Type 0) [CResourceType R] where
   seqCombine : R → R → R
   branchCombine : R → R → R
 
+/-- WHAT `HasCost` is: THE bridge hook from the extended resource model
+to `Complexity.BigO`. A resource value (e.g. `TimeCost ⟨fun n => …⟩`)
+extracts to a cost function `Nat → Nat` (input size → steps / peak live
+cells). WHY in core (`Context`, not `Examples`): every resource defines
+its own extraction once; the generic membership predicate
+(`costInClass` in `Complexity/Bridge.lean`) and the per-resource
+`BigO`-preservation lemmas (in the resource's own file) then speak one
+language. `HasCost` itself has no `BigO` dependency (keeps
+`Context` import-free of `Complexity`); the `BigO` statements live in
+`Bridge` + the resource files. -/
+class HasCost (R : Type 0) where
+  cost : R → (Nat → Nat)
+
 /-- Membership witness in `Type` (not `Prop`): `head` selects the newest
 entry (shadowing), `tail` selects an older one. Lives in `Type` (not
 `Prop` like `List.Mem`) precisely so `RStore.get` can eliminate it to

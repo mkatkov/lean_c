@@ -27,6 +27,8 @@ instance : CComplexity .time TimeComplexity_X where isComplexity := True
 -- 3. Give the envelope (the mathematical content of your class).
 instance : HasQuantRep .time TimeComplexity_X where rep := g_X
 -- 4. Declare intent: immediate preds/succs (must match step 5's proofs).
+--    The only equality case in base is `poly 0 = O1` (`equalTo := [O1]`,
+--    no strict neighbours); every genuinely new growth rate uses `[]`.
 instance : CComplexityRelationship .time TimeComplexity_X where
   minimalStrictlySmaller := [<pred>]   -- e.g. [TimeComplexity_O1]
   minimalStrictlyLarger := [<succ>]    -- e.g. [TimeComplexity_HALTS]
@@ -35,8 +37,10 @@ instance : CComplexityRelationship .time TimeComplexity_X where
 --    (no typeclasses on variables, so no coherence trap):
 --    `BigO g_pred g_X` and (`BigO g_X g_succ`, or: any `BigO g_X g`
 --    already places X below HALTS by forgetting — say so in a comment).
--- 6. Prove memberships `pred ∈ yourList`, `succ ∈ yourList` with
---    `List.Mem.head` / `List.Mem.tail` constructors.
+--    Equality cases prove mutual `BigO` both ways instead
+--    (see `quant_poly0_le_o1` / `quant_o1_le_poly0`).
+-- 6. Prove `can_insert_quant_to_list` memberships (preds/succs/equalities
+--    in your list) with `List.Mem.head` / `List.Mem.tail` constructors.
 ```
 
 ### WHY the recipe is shaped this way (three traps it dodges)
@@ -73,7 +77,14 @@ any file can add instances for new types — no base edits. WHY axis is
 explicit: time and memory envelopes compose differently, so a rep is
 meaningless without saying which resource it bounds. Base quantitative
 classes get instances below; qualitative ones (`HALTS`, `UNBOUND`,
-`UNDECIDABLE`, …) deliberately have NONE — they sit outside Big-O. -/
+`UNDECIDABLE`, …) deliberately have NONE — they sit outside Big-O.
+
+NOTE on `Zero`: `HasQuantRep .time ZeroTimeComplexity` is `gZero`, and
+both `BigO gZero g1` (`bigO_zero_le_one`) and `BigO g1 gZero`
+(`bigO_one_le_zero`) hold — `QuantLE` equates `Zero` and `O1` both ways.
+Lattice strictness `Zero < O1` lives ONLY in `TagLE` (stipulated `True`,
+no `o1 → zero` row), never in reps. Do not use `QuantLE` to argue
+`Zero` strictness. -/
 class HasQuantRep (axis : ResourceAxis) (α : Type) where
   rep : Nat → Nat
 
@@ -108,5 +119,40 @@ theorem QuantLE.trans {axis : ResourceAxis} {a b c : Type}
     QuantLE (axis := axis) a b → QuantLE (axis := axis) b c →
       QuantLE (axis := axis) a c :=
   BigO.trans
+
+/-- `poly 0 = O1` both ways (`gpoly 0 = 1` pointwise). This is the
+machine-checked side of the `equalTo := [O1]` relationship entry:
+equality of classes IS mutual `BigO` inclusion, proved here, not asserted. -/
+theorem quant_poly0_le_o1 : QuantLE (axis := .time) (TimeComplexity_poly 0) TimeComplexity_O1 := by
+  show BigO (gpoly 0) g1
+  have h : (gpoly 0) = (fun _ => 1) := by
+    funext n; exact gpoly_zero_eq_one n
+  rw [h]; exact BigO.refl _
+
+theorem quant_o1_le_poly0 : QuantLE (axis := .time) TimeComplexity_O1 (TimeComplexity_poly 0) :=
+  bigO_one_le_poly 0
+
+/-- WHAT `can_insert_quant_to_list` is: THE open-world insertion predicate
+(unified with the closed `can_insert_complexity_class_to_graph` in
+`Graph`, which additionally checks `TagOf`/`TagLE`/tag-freshness for base
+types). `τ` may join knowledge `target` iff every declared predecessor,
+successor, AND equality witness is already known in `target`
+(memberships via `Mem.head`/`Mem.tail` constructors — no type
+disequalities, see recipe note 2).
+
+WHY memberships only (no `BigO` inside): the `BigO` evidence lives on
+EXPLICIT rep functions (`BigO g_pred g_X`), not on typeclass-projected
+`rep`s of quantified variables (coherence trap, recipe note 1). The caller
+proves the `BigO` facts separately (e.g. `linear_above_o1`,
+`linear_below_poly2`) and conjoins them with this predicate — see
+`Examples/ComplexityLinear.lean:linear_inserted`. For `poly 0` the two
+strict conjuncts are vacuous (`smaller`/`larger` are `[]`) and only the
+`equalTo` membership (`O1 ∈ target`) is required. -/
+def can_insert_quant_to_list {axis : ResourceAxis} (τ : Type)
+    [CComplexity axis τ] [CComplexityRelationship axis τ]
+    (target : List Type) : Prop :=
+  (∀ p : Type, p ∈ CComplexityRelationship.minimalStrictlySmaller (axis := axis) (α := τ) → p ∈ target) ∧
+  (∀ s : Type, s ∈ CComplexityRelationship.minimalStrictlyLarger (axis := axis) (α := τ) → s ∈ target) ∧
+  (∀ e : Type, e ∈ CComplexityRelationship.equalTo (axis := axis) (α := τ) → e ∈ target)
 
 end LeanC

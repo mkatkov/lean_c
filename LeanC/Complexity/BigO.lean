@@ -68,8 +68,9 @@ theorem BigO.const_le_one {K : Nat} (c : Nat → Nat) (hc : ∀ n, c n ≤ K) :
 
 /-- WHY `add`: sequential time *adds*. If `f₁ =O g₁` and `f₂ =O g₂`
 then `f₁ + f₂ =O g₁ + g₂` (takes `c₁ + c₂`, `max N₁ N₂`).
-Per-resource sequencing (`CResource.seqCombine` for adding resources)
-is exactly this sum, so this lemma *is* the sequence composition rule. -/
+Per-resource use: `TimeCost.seqCombine` is exactly this sum
+(`time_seq_preserves` in `Examples/Resources.lean` is one application);
+memory sequencing maxes instead (`mem_seq_preserves` via `max_bound`). -/
 theorem BigO.add {f₁ g₁ f₂ g₂ : Nat → Nat} :
     BigO f₁ g₁ → BigO f₂ g₂ →
     BigO (fun n => f₁ n + f₂ n) (fun n => g₁ n + g₂ n) := by
@@ -101,8 +102,11 @@ theorem BigO.add {f₁ g₁ f₂ g₂ : Nat → Nat} :
 /-- WHY `max_bound`: branching and high-water marks take
 `max`. If each side is bounded, their `max` is bounded by the `max`
 of the envelopes (takes `c₁ + c₂`, which safely covers the zero
-cases). Per-resource branching (`CResource.branchCombine`) is exactly
-this. -/
+cases). Per-resource use: `MemCost.seqCombine`/`branchCombine` and the
+max-half of `TimeCost.branchCombine` are exactly this
+(`mem_seq_preserves`, `mem_branch_preserves` in
+`Examples/Resources.lean`); the time-branch guard `+1` chains this with
+`add` (`time_branch_preserves`). -/
 theorem BigO.max_bound {f₁ g₁ f₂ g₂ : Nat → Nat} :
     BigO f₁ g₁ → BigO f₂ g₂ →
     BigO (fun n => Nat.max (f₁ n) (f₂ n)) (fun n => Nat.max (g₁ n) (g₂ n)) := by

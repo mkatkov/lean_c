@@ -25,8 +25,8 @@ it exercises both edge directions (above `log`, below `poly₂`).
    `larger := [HALTS]` — declares intent (mirrors `log`).
 5. Three `BigO` facts on explicit reps — the evidence (no typeclass
    lookup on variables, so no coherence trap; see recipe note 1).
-6. Memberships via `Mem.head`/`Mem.tail` — never `decide` on types
-   (see recipe note 2).
+6. `can_insert_quant_to_list` memberships via `Mem.head`/`Mem.tail` —
+   never `decide` on types (see recipe note 2).
 
 **WHAT is deliberately NOT here:** a `τ ∉ list` freshness clause and a
 new `ComplexityTag` constructor. Freshness holds by construction (this
@@ -131,19 +131,32 @@ def linearGraph : CComplexityGraph linearList :=
     (CComplexityGraph.insert (axis := .time) (TimeComplexity_poly 2) baseGraph)
 
 -- Step 6 (insertion accepted). WHAT: the package — both `BigO` edges
--- plus memberships of the declared preds/succs (`O1`, `HALTS`) in the
--- target knowledge. WHY memberships via `Mem.head`/`Mem.tail`
--- constructors: `O1` is `linearList[3]`, `HALTS` is `linearList[4]`
--- (2 prepended + base offsets), so 3 resp. 4 `tail`s then `head` —
--- pure constructors, no type disequalities anywhere.
+-- plus the unified open predicate `can_insert_quant_to_list` (memberships
+-- of the declared preds/succs/equalities in the target knowledge).
+-- WHY memberships via `Mem.head`/`Mem.tail` constructors: `O1` is
+-- `linearList[3]`, `HALTS` is `linearList[4]` (2 prepended + base offsets),
+-- so 3 resp. 4 `tail`s then `head` — pure constructors, no type
+-- disequalities anywhere. The `equalTo` conjunct is vacuous (`[]`).
 theorem linear_inserted :
     BigO g1 glinear ∧ BigO glinear (gpoly 2) ∧ BigO glog glinear ∧
-    TimeComplexity_O1 ∈ linearList ∧ TimeComplexity_HALTS ∈ linearList := by
-  refine ⟨linear_above_o1, linear_below_poly2, linear_above_log, ?memO1, ?memHalts⟩
-  · simp only [linearList, baseTimeMem]
-    exact List.Mem.tail _ (List.Mem.tail _ (List.Mem.tail _ (List.Mem.head _)))
-  · simp only [linearList, baseTimeMem]
-    exact List.Mem.tail _ (List.Mem.tail _ (List.Mem.tail _ (List.Mem.tail _ (List.Mem.head _))))
+    can_insert_quant_to_list (axis := .time) TimeComplexity_linear linearList := by
+  refine ⟨linear_above_o1, linear_below_poly2, linear_above_log, ?predMem, ?succMem, ?eqMem⟩
+  · intro p hp
+    cases hp with
+    | head as =>
+      simp only [linearList, baseTimeMem]
+      exact List.Mem.tail _ (List.Mem.tail _ (List.Mem.tail _ (List.Mem.head _)))
+    | tail b h =>
+      cases h
+  · intro s hs
+    cases hs with
+    | head as =>
+      simp only [linearList, baseTimeMem]
+      exact List.Mem.tail _ (List.Mem.tail _ (List.Mem.tail _ (List.Mem.tail _ (List.Mem.head _))))
+    | tail b h =>
+      cases h
+  · intro e he
+    cases he
 
 -- NOTE (`linear_strictness_note`): strictness (`¬ BigO glinear glog`,
 -- i.e. `n ≠O log n`, and `¬ BigO (gpoly 2) glinear`) is NOT proved here.

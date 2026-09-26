@@ -8,14 +8,19 @@ namespace LeanC
 
 /-- Canonical representatives: WHAT a quantitative class *is*.
 `Class(g) = { f | BigO f g }`, so class ordering *is* Big-O
-entailment (`Class(g₁) ≤ Class(g₂) ↔ BigO g₁ g₂`).
+entailment (`Class(g₁) ≤ Class(g₂) ↔ BigO g₁ g₂`) — EXCEPT for
+`Zero`, which is separated from `BigO` by stipulation (see
+`bigO_one_le_zero` below and `TagLE` in `Lattice`).
 
 - `gZero = 0`: empty computation (bottom, by stipulation — outside
   the `=O` machinery, every program is `≥` it).
 - `g1 = 1`: `O(1)` — any fixed constant folds here (`const_le_one`).
 - `glog = log2(n+1)`: `O(log n)` — the `+1` avoids the degenerate
   `log2 0 = log2 1 = 0` cases.
-- `gpoly k = n^k`: `O(n^k)` nested fixed loops.
+- `gpoly k = n^k`: `O(n^k)` nested fixed loops. `k = 0` is degenerate:
+  `gpoly 0 = fun _ => 1 = g1` extensionally (see `gpoly_zero_eq_one`),
+  so `poly 0` is documented as *equal* to `O1` (via `equalTo`), not
+  strictly above it.
 Time and memory share shapes; memory reads "live cells", and its
 `within_bounds` proofs (`Arrays.lean`) are what promote an access
 from `UNKNOWN` to `O1`. -/
@@ -24,10 +29,33 @@ def g1 : Nat → Nat := fun _ => 1
 def glog : Nat → Nat := fun n => Nat.log2 (n + 1)
 def gpoly (k : Nat) : Nat → Nat := fun n => n ^ k
 
-/-- WHY `0 =O 1`: the bottom edge. `0 ≤ 0 * …` holds trivially;
-this is the `Zero < O1` lattice edge as a growth fact. -/
+/-- WHY `0 =O 1` holds arithmetically but is NOT the lattice edge.
+`0 ≤ 0 * …` holds trivially. The `Zero < O1` lattice edge is by
+stipulation (`True` in `TagLE`), NOT this fact — see `bigO_one_le_zero`:
+`BigO` with the `max · 1` guard equates `0` and `1`, so ordering `Zero`
+via `BigO` would collapse the bottom. Kept here as an arithmetic fact
+only. -/
 theorem bigO_zero_le_one : BigO gZero g1 :=
   ⟨0, 0, fun _ _ => Nat.zero_le _⟩
+
+/-- WHY `Zero` is separated from `BigO`: the `max · 1` guard equates
+`0` and `1` (`1 ≤ 1 * max 0 1`), so `1 =O 0` holds. If `Zero < O1`
+were a `BigO` edge, the reverse `BigO` edge would also hold and the
+bottom would collapse to `O1`. Hence `TagLE` stores all `Zero` edges
+as `True` by stipulation and never uses `BigO` with `gZero` on the
+right. This collapse witness is the proof that the separation is
+load-bearing, not stylistic. -/
+theorem bigO_one_le_zero : BigO g1 gZero := by
+  refine ⟨1, 0, fun n _ => ?_⟩
+  show (1 : Nat) ≤ 1 * Nat.max (gZero n) 1
+  simp only [gZero]
+  decide
+
+/-- `gpoly 0` is constantly `1`: `n ^ 0 = 1` for every `n`.
+Hence `poly 0` is extensionally `O1` — the relationship table records
+it in `equalTo`, not in `smaller`/`larger` (see `Classes`). -/
+theorem gpoly_zero_eq_one (n : Nat) : (gpoly 0) n = 1 :=
+  Nat.pow_zero n
 
 /-- WHY `1 =O log`: the `O1 < O_log` edge. `1 ≤ max (log2(n+1)) 1`
 holds because the `max` is always `≥ 1` — no growth argument needed,

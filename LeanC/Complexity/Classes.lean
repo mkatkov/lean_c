@@ -97,13 +97,15 @@ immediate predecessors / successors / equals. WHY honest (never `[]`
 by default): these lists *are* the lattice edges the graph reasons
 about — an empty list claims "no neighbour", which must be true
 (`UNBOUND` really has no finite predecessor). `equalTo` lists the
-classes equal to this one; every base class is distinct, so it is
-`[]` throughout.
+classes semantically equal to this one (same `BigO` envelope both
+ways); the only base equality is `poly 0 = O1` (`gpoly 0 = fun _ => 1`,
+see `gpoly_zero_eq_one`), so every other base `equalTo` is `[]`.
 
 Intended time shape: `Zero < O1 < HALTS < UNDECIDABLE` with
 `UNBOUND < UNDECIDABLE` and `UNBOUND` otherwise incomparable; every
-later quantitative class (`log`, `poly k`, and anything added via
-`HasQuantRep`) sits between `O1` and `HALTS`. Memory mirrors it. -/
+later quantitative class (`log`, `poly k` with `1 ≤ k`, and anything
+added via `HasQuantRep`) sits between `O1` and `HALTS`. `poly 0` sits
+IN `O1` (equal, not below). Memory mirrors it. -/
 class CComplexityRelationship (axis : ResourceAxis) (α : Type u)
     [CComplexity axis α] where
   minimalStrictlySmaller : List Type
@@ -122,10 +124,54 @@ instance : CComplexityRelationship .time TimeComplexity_log where
   minimalStrictlySmaller := [TimeComplexity_O1]
   minimalStrictlyLarger := [TimeComplexity_HALTS]
   equalTo := []
+/-- `poly k`: for `1 ≤ k` a strict quantitative rung (`O1 < poly k <
+HALTS`); for `k = 0` degenerate — `gpoly 0 = 1`, so it IS `O1`
+(`equalTo := [O1]`, no strict neighbours). The `if` needs only
+`Decidable (k = 0)` (`Nat.decEq`), no base edits per degree. -/
 instance (k : Nat) : CComplexityRelationship .time (TimeComplexity_poly k) where
-  minimalStrictlySmaller := [TimeComplexity_O1]
-  minimalStrictlyLarger := [TimeComplexity_HALTS]
-  equalTo := []
+  minimalStrictlySmaller := if k = 0 then [] else [TimeComplexity_O1]
+  minimalStrictlyLarger := if k = 0 then [] else [TimeComplexity_HALTS]
+  equalTo := if k = 0 then [TimeComplexity_O1] else []
+
+/-- Unfolding helpers: the `if k = 0` in the `poly` relationship is
+definitional (instance projection reduces to the field value), so `show`
+exposes it and `if_neg`/`if_pos` discharge it. `Graph` proofs rewrite with
+these instead of `simp`-through-instances (fragile). -/
+theorem poly_small_eq (k : Nat) (hk : k ≠ 0) :
+    CComplexityRelationship.minimalStrictlySmaller (axis := .time)
+      (α := TimeComplexity_poly k) = [TimeComplexity_O1] := by
+  show (if k = 0 then ([] : List Type) else [TimeComplexity_O1]) = _
+  exact if_neg hk
+
+theorem poly_large_eq (k : Nat) (hk : k ≠ 0) :
+    CComplexityRelationship.minimalStrictlyLarger (axis := .time)
+      (α := TimeComplexity_poly k) = [TimeComplexity_HALTS] := by
+  show (if k = 0 then ([] : List Type) else [TimeComplexity_HALTS]) = _
+  exact if_neg hk
+
+theorem poly_equal_eq (k : Nat) (hk : k ≠ 0) :
+    CComplexityRelationship.equalTo (axis := .time)
+      (α := TimeComplexity_poly k) = ([] : List Type) := by
+  show (if k = 0 then [TimeComplexity_O1] else ([] : List Type)) = _
+  exact if_neg hk
+
+theorem poly_small_zero :
+    CComplexityRelationship.minimalStrictlySmaller (axis := .time)
+      (α := TimeComplexity_poly 0) = ([] : List Type) := by
+  show (if (0 : Nat) = 0 then ([] : List Type) else [TimeComplexity_O1]) = _
+  exact if_pos rfl
+
+theorem poly_large_zero :
+    CComplexityRelationship.minimalStrictlyLarger (axis := .time)
+      (α := TimeComplexity_poly 0) = ([] : List Type) := by
+  show (if (0 : Nat) = 0 then ([] : List Type) else [TimeComplexity_HALTS]) = _
+  exact if_pos rfl
+
+theorem poly_equal_zero :
+    CComplexityRelationship.equalTo (axis := .time)
+      (α := TimeComplexity_poly 0) = [TimeComplexity_O1] := by
+  show (if (0 : Nat) = 0 then [TimeComplexity_O1] else ([] : List Type)) = _
+  exact if_pos rfl
 instance : CComplexityRelationship .time TimeComplexity_HALTS where
   minimalStrictlySmaller := [TimeComplexity_O1]
   minimalStrictlyLarger := [TimeComplexity_UNDECIDABLE]
