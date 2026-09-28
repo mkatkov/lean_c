@@ -300,4 +300,40 @@ theorem complexityLE_o1Mem_not_zeroMem :
     ¬ ComplexityLE MemoryComplexity_O1 ZeroMemoryComplexity :=
   fun h => h
 
+/-! ## Fix 4 — `poly 0 = O1`: coherence between `TagLE` and `QuantLE`
+
+`QuantLE` equates them (`quant_poly0_le_o1` / `quant_o1_le_poly0`:
+mutual `BigO`, since `gpoly 0 = fun _ => 1`). `TagLE` deliberately
+does NOT: `TagLE (.polyTime 0) .o1Time` is catch-all `False`
+(intensional tags distinguish `polyTime 0` from `o1Time`; equality
+lives in reps, not tags). This is by design — tags are syntactic
+freshness (`DecidableEq` on constructors), growth equality is semantic
+(mutual `BigO`) — but it must be stated, not discovered. Rule: use
+`QuantLE` for quantitative reasoning about `poly 0` (costs, `CostSpec`,
+insertion); use `TagLE`/`ComplexityLE` only for the qualitative spine
+(`Zero < O1 < HALTS < UNDECIDABLE`, incomparabilities). The theorems
+below machine-check both sides of the discrepancy.
+
+Base-count reconciliation: `baseTimeMem` has length 10 (the qualitative
+spine on both axes: 5 time + 5 memory, NO `log`/`poly` — they are
+quantitative insertions, not base vocabulary). `ComplexityTag` has 12
+constructors (10 + `logTime` + `polyTime k` for the TIME quantitative
+rungs that predate the open path; memory `log`/`poly` deliberately
+have NO tags and insert via `HasQuantRep`). Only the four centralized
+helpers (`o1_mem_base`, `halts_mem_base`, `o1Mem_mem_base`,
+`bounded_mem_base` in `Graph`) break on `baseTimeMem` reorder — callers
+stay intact. -/
+
+/-- `poly 0 ≰ O1` in tags (intensional distinction), even though
+`QuantLE` equates them both ways. -/
+theorem complexityLE_poly0_not_o1 :
+    ¬ ComplexityLE (TimeComplexity_poly 0) TimeComplexity_O1 :=
+  fun h => h
+
+/-- `O1 ≤ poly 0` in tags DOES hold (via the general
+`o1 → poly k` `BigO` row at `k = 0`: `bigO_one_le_poly 0`). -/
+theorem complexityLE_o1_poly0 :
+    ComplexityLE TimeComplexity_O1 (TimeComplexity_poly 0) :=
+  bigO_one_le_poly 0
+
 end LeanC

@@ -222,27 +222,70 @@ theorem quant_mem_o1_le_poly0 :
     QuantLE (axis := .memory) MemoryComplexity_O1 (MemoryComplexity_poly 0) :=
   bigO_one_le_poly 0
 
-/-- WHAT `can_insert_quant_to_list` is: THE open-world insertion predicate
-(unified with the closed `can_insert_complexity_class_to_graph` in
-`Graph`, which additionally checks `TagOf`/`TagLE`/tag-freshness for base
-types). `τ` may join knowledge `target` iff every declared predecessor,
-successor, AND equality witness is already known in `target`
-(memberships via `Mem.head`/`Mem.tail` constructors — no type
-disequalities, see recipe note 2).
+/-- WHAT `can_insert_quant_memberships_to_list` is: the membership-only
+half of open-world insertion (Fix 3 — renamed from
+`can_insert_quant_to_list` to make the weakness explicit). `τ` may join
+`target` iff every declared predecessor, successor, AND equality
+witness is already known in `target` (memberships via
+`Mem.head`/`Mem.tail` constructors — no type disequalities, see recipe
+note 2). ALONE this does NOT certify growth: use the SOUND wrappers
+below (`can_insert_quant_sound_between/below_qual/equal`), which conjoin
+these memberships with the `QuantLE` + `StrictQuantBelow` evidence.
+The old name remains as a deprecated alias.
 
 WHY memberships only (no `BigO` inside): the `BigO` evidence lives on
 EXPLICIT rep functions (`BigO g_pred g_X`), not on typeclass-projected
-`rep`s of quantified variables (coherence trap, recipe note 1). The caller
-proves the `BigO` facts separately (e.g. `linear_above_o1`,
-`linear_below_poly2`) and conjoins them with this predicate — see
-`Examples/ComplexityLinear.lean:linear_inserted`. For `poly 0` the two
-strict conjuncts are vacuous (`smaller`/`larger` are `[]`) and only the
-`equalTo` membership (`O1 ∈ target`) is required. -/
-def can_insert_quant_to_list {axis : ResourceAxis} (τ : Type)
+`rep`s of quantified variables (coherence trap, recipe note 1). -/
+def can_insert_quant_memberships_to_list {axis : ResourceAxis} (τ : Type)
     [CComplexity axis τ] [CComplexityRelationship axis τ]
     (target : List Type) : Prop :=
   (∀ p : Type, p ∈ CComplexityRelationship.minimalStrictlySmaller (axis := axis) (α := τ) → p ∈ target) ∧
   (∀ s : Type, s ∈ CComplexityRelationship.minimalStrictlyLarger (axis := axis) (α := τ) → s ∈ target) ∧
   (∀ e : Type, e ∈ CComplexityRelationship.equalTo (axis := axis) (α := τ) → e ∈ target)
+
+/-- Deprecated alias: use `can_insert_quant_memberships_to_list` (memberships
+only) or the SOUND wrappers below (memberships + growth evidence). -/
+abbrev can_insert_quant_to_list {axis : ResourceAxis} (τ : Type)
+    [CComplexity axis τ] [CComplexityRelationship axis τ]
+    (target : List Type) : Prop :=
+  can_insert_quant_memberships_to_list (axis := axis) τ target
+
+/-- SOUND open insertion between two quantitative neighbours
+(Fix 3 — the bundle callers must prove): `Lo < New < Hi` with growth
+evidence (`QuantLE` + `StrictQuantBelow` both sides) AND memberships.
+Example: `linear` between `O1` and `poly 2` (see
+`Examples/ComplexityLinear.lean:linear_inserted_sound`). -/
+def can_insert_quant_sound_between {axis : ResourceAxis}
+    (Lo New Hi : Type)
+    [HasQuantRep axis Lo] [HasQuantRep axis New] [HasQuantRep axis Hi]
+    [CComplexity axis New] [CComplexityRelationship axis New]
+    (target : List Type) : Prop :=
+  QuantLE (axis := axis) Lo New ∧ StrictQuantBelow (axis := axis) Lo New ∧
+  QuantLE (axis := axis) New Hi ∧ StrictQuantBelow (axis := axis) New Hi ∧
+  can_insert_quant_memberships_to_list (axis := axis) New target
+
+/-- SOUND open insertion below a qualitative ceiling (Fix 3): `Lo < New`,
+`New` below `HALTS`/`BOUNDED` by forgetting (no `HasQuantRep` on the
+ceiling, so no `QuantLE`/`StrictQuantBelow` against it — value-level
+shadow is `costInClass_to_halts/bounded`). Caller proves the
+quant–quant growth + memberships; forgetting is cited, not proved. -/
+def can_insert_quant_sound_below_qual {axis : ResourceAxis}
+    (Lo New : Type)
+    [HasQuantRep axis Lo] [HasQuantRep axis New]
+    [CComplexity axis New] [CComplexityRelationship axis New]
+    (target : List Type) : Prop :=
+  QuantLE (axis := axis) Lo New ∧ StrictQuantBelow (axis := axis) Lo New ∧
+  can_insert_quant_memberships_to_list (axis := axis) New target
+
+/-- SOUND equality insertion (Fix 3): `New = Eq` via mutual `BigO`
+(`poly 0 = O1` pattern). Must NOT prove `StrictQuantBelow` (that would
+contradict equality). -/
+def can_insert_quant_sound_equal {axis : ResourceAxis}
+    (New Eq : Type)
+    [HasQuantRep axis New] [HasQuantRep axis Eq]
+    [CComplexity axis New] [CComplexityRelationship axis New]
+    (target : List Type) : Prop :=
+  QuantLE (axis := axis) New Eq ∧ QuantLE (axis := axis) Eq New ∧
+  can_insert_quant_memberships_to_list (axis := axis) New target
 
 end LeanC

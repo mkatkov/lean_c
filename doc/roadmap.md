@@ -277,6 +277,12 @@ Milestones
   `log`/`poly`); `graphInclusion` preorder documents knowledge growth;
   see `doc/next_task.md` (`doc/implementation_plan.md` is historical —
   do not build from it; `Tests/TestComplexity.lean` green).
+  Status (2026-09-28): P0 Cost/Call/Loop sound — parametric calls
+  (`Nat → Nat`, `ProgramCallsResolve`, `mkFuncWithBody`), `RawExpr` mem
+  fix, `forN` bounded loop with first `linear` (`poly 1` core + `linear`
+  in `Tests`) + `0`-iter `O1`, `whileTrue` marker (no inhabitant),
+  fuel-recursion sketch; see `doc/next_task.md` §7
+  (`Tests/TestCostSpec.lean`, `LeanC/Loop.lean` green).
 
 ## Extras and Notes
 - Targeting Clight/CompCert semantics is highly beneficial: reuse proven semantics and style of proofs from CompCert papers and code.

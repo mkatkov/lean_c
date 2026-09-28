@@ -157,12 +157,14 @@ def linearGraph : CComplexityGraph linearList :=
     (CComplexityGraph.insert (axis := .time) (TimeComplexity_poly 2) baseGraph)
 
 -- Step 6 (insertion accepted). WHAT: the package — both `BigO` edges
--- plus the unified open predicate `can_insert_quant_to_list` (memberships
--- of the declared preds/succs/equalities in the target knowledge).
+-- plus the unified open predicate `can_insert_quant_memberships_to_list`
+-- (memberships of the declared preds/succs/equalities in the target
+-- knowledge; `can_insert_quant_to_list` remains as deprecated alias).
 -- WHY memberships via centralized base helpers + two `tail`s: `O1 ∈ base`
 -- (`o1_mem_base`) lifts through the 2 prepended entries, so callers never
 -- hardcode `linearList[3]` offsets — only `Graph`'s helpers know the base
--- order. The `equalTo` conjunct is vacuous (`[]`).
+-- order. The `equalTo` conjunct is vacuous (`[]`). SOUND form is
+-- `linear_inserted_sound` below (`can_insert_quant_sound_between` bundle).
 theorem linear_inserted :
     BigO g1 glinear ∧ BigO glinear (gpoly 2) ∧ BigO glog glinear ∧
     can_insert_quant_to_list (axis := .time) TimeComplexity_linear linearList := by
@@ -183,6 +185,16 @@ theorem linear_inserted :
       cases h
   · intro e he
     cases he
+
+/-- SOUND insertion (Fix 3): `O1 < linear < poly₂` with growth evidence
++ memberships in one named bundle (cannot forget the `BigO` half). -/
+theorem linear_inserted_sound :
+    can_insert_quant_sound_between (axis := .time)
+      TimeComplexity_O1 TimeComplexity_linear (TimeComplexity_poly 2)
+      linearList :=
+  ⟨linear_above_o1, strict_o1_linear,
+   linear_below_poly2, strict_linear_poly2,
+   linear_inserted.2.2.2⟩
 
 -- NOTE (`linear_strictness_note`): `O1 < linear` and `linear < poly₂`
 -- strictness ARE proved above (`strict_o1_linear`, `strict_linear_poly2`).

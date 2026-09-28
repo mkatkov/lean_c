@@ -5,6 +5,18 @@ Goal of this task was friction discovery, not coverage (`doc/next_task.md`
 below with a concrete next step. All items verified by `lake build` +
 `./.lake/build/bin/test` green (2026-09-18).
 
+> Fixes 1–5 follow-up (2026-09-27, program-as-proof; `lake build` +
+> `./.lake/build/bin/test` green): F2 CLOSED (`tableMemCells`/`litMemFnWithWidth`
+> + `poolCells` + 4-limit `fitsBudget`/`fitsProgramAt`/`programFitsDevice` in
+> `LeanC/CostSpec.lean` + `LeanC/Program.lean`); F5 CLOSED (`CExpr.call` now
+> `fname + argStrs + argTime/argMem + declaredTime/declaredMem` with gated local
+> `O1` + `RawExpr`/`mkCallWithRaw` checked path in `LeanC/Expr.lean` +
+> `CFunc{declared/body + bodyLeDeclared}` + `callResolves`/`ProgramMeetsSpec` in
+> `LeanC/Func.lean`/`LeanC/Program.lean`); F8 narrowed (statement costs still
+> per-value combinators, but `ProgramMeetsSpec` + `programWorstCovers` +
+> `mkProgramMeetsSpec` make the program the spec certificate). F1, F3, F4, F6,
+> F7, F9, F10 remain as logged (deferred by design).
+
 ## F1 — `tableLit` is all-`Int` (`Vector Int n`), not per-type
 Where: `LeanC/Literals.lean:33` (`tableLit`), pilot `agetBase`
 (`Tests/TestLiteralsExpr.lean:141`).
@@ -143,3 +155,66 @@ requirement (no proof = no term) — only the instance changes.
   Split to `Stdlib/` when the pilot exceeds ~4 funcs.
 - `emitFunc` is single-line (`"void f(void) { body }"`) — `s!"…{{\n…}}"`
   brace/newline escaping proved more annoying than useful for the draft.
+
+> P0 Cost/Call/Loop follow-up (2026-09-28, `lake build` +
+> `./.lake/build/bin/test` green): N1–N6 landed (`LeanC/Expr.lean`
+> `CExpr.call : Nat → Nat` ×4 + `rawArgsTimeFn/MemFn` + `mkCallWithRaw`
+> `dt/dm : Nat → Nat`; `LeanC/CostSpec.lean` threads `n`
+> (`argTime n + declaredTime n + 1`, `max (argMem n) (declaredMem n)`) +
+> `exprTime/MemBound : Nat → Nat` + conditional `O1`
+> (`exprCallsO1Time/Mem`, `callTime/Mem_in_o1`, `o1_add_one/binop/tern`);
+> `LeanC/Func.lean` parametric `CFunc` (`Nat → Nat` ×4, pointwise
+> `bodyLeDeclared`) + `mkFuncWithBody` measured tie;
+> `LeanC/Modules.lean`/`LeanC/Program.lean` pointwise worst
+> (`Nat → Nat`) + `CallSite`/`callSites`/`ProgramCallsResolve` +
+> `ProgramMeetsSpec.callsResolve` + `programFitsDevice` at `n`;
+> N3 `rawMemBound (.callRaw _ args)` maxes over args; N4 `LeanC/Loop.lean`
+> `forNTime/Mem` (sums/maxes) + `forNDiag` linear (`poly 1` core,
+> `linear` in `Tests`) + `0`-iter `Zero`/`O1`; N5 `UnboundedLoop.whileTrue`
+> marker (no inhabitant, cites `no_divergent_cost`); N6 `recWithFuel`
+> (= `forN`, fuel example `countdown`). Tests: `Tests/TestCostSpec.lean`
+> extends (parametric at two `n`s `6`/`11`, nested-mem `2`, bogus
+> `¬ ProgramCallsResolve/MeetsSpec`, measured `add2Measured`,
+> `poly1`+`linear` diag, `whileTrue` marker).
+
+## F11 — call parametricity (`Nat` → `Nat → Nat`) ripples to `O1` gating
+Where: `LeanC/Expr.lean:102-104` (`CExpr.call` ×4 fns), `LeanC/CostSpec.lean`
+(`exprTime/MemFn`, `exprTime/MemBound : Nat → Nat`, `exprCallsO1Time/Mem`,
+`exprTime/Mem_in_o1` conditional), `LeanC/Func.lean` (`CFunc` ×4 fns +
+`mkFuncWithBody`), `LeanC/Program.lean` (`CallSite`, `callSites`,
+`ProgramCallsResolve`, `programWorstTime/Mem : Nat → Nat`).
+Pain: universal `exprTime_in_o1 ∀ e` is false for linear callees
+(`fun n => n`); closed `Nat` bounds cannot bound varying fns; function
+equality (`declaredTime = dt`) needs `rfl` on same literal (no funext in
+tests); `at` is a Lean keyword (use `argT`/`decT`); `programWorstTime`
+`Nat` → `Nat → Nat` breaks `ToString`/`rfl` tests (evaluate at `n`).
+Choice: `O1` iff call specs `O1` (`exprCallsO1Time/Mem` hypothesis,
+`BigO` on fns, not closed `K`); `mkCallWithRaw` lifts closed arg sums to
+const fns (`rawArgsTimeFn/MemFn`), `n`-variation enters via `declared`;
+`CFunc`/`Program` worst pointwise (`∀ n`); `CProgram.callSites` explicit
+list (omission still possible — bodies not stored — but listed bogus
+`fname` has no proof).
+Next: store bodies (`CExpr`/`RawExpr`) in `CFunc`/`CProgram` when the
+memory-model task needs omission-freedom (exact call-site enumeration);
+keep `fname` seam (`Expr` never imports `Func`).
+
+## F12 — loop friction (`forN` shape, uniform bound, `linear` location)
+Where: `LeanC/Loop.lean` (`forNTimeAux/MemAux` recursion on `iters`,
+`forNTime/Mem`, `forNDiagTime/Mem`, `forNTimeAux_le/MemAux_le`,
+`forNDiag_linear` (`poly 1`), `Tests/TestCostSpec.lean`
+`forNDiag_linear_glinear`).
+Pain: `forN iters body` with fixed `iters` is `O1`, not linear — linear
+needs diagonal (`iters = input size`, `forNDiagTime body n =
+Σ_{i<n}`); per-iteration `O1` with distinct `K_i`/`N₀` does not give
+uniform linear (e.g. `body i = const i`); `List.range` fold blocks
+`BigO.add` induction (use `Nat` recursion `Aux`); `gpoly 1`
+(`fun n => n ^ 1`) vs `glinear` (`fun n => n`) need `pow_one` bridge
+(core proves `poly 1`, `Tests` proves `linear` — core never imports
+`Examples/`); `ComplexityLE` needs `Lattice` import (not via `Bridge`).
+Choice: N6 picks fuel (`Nat` bound, reduces to N4) over well-founded
+variant (one example `countdown`, `recWithFuel = forN` by `rfl`);
+unbounded (`whileTrue`, no fuel) reduces to N5 marker; `0` iters is
+`Zero`-exact by `rfl` (both auxiliaries `0` definitionally).
+Next: `∑`-lemma for variable-`iters` loops when `for`/`while` syntax
+lands (`Stmt`); keep mem `max` (diagonal mem stays `O1` under uniform
+bound).

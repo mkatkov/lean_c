@@ -151,8 +151,10 @@ example : ¬ ComplexityLE MemoryComplexity_O1 ZeroMemoryComplexity :=
   complexityLE_o1Mem_not_zeroMem
 
 /-- 1c'''''. Knowledge growth across lists is `graphInclusion`
-(intra-list `LE` is equivalence by design; the class order lives on
-tags/reps). -/
+(intra-list equivalence is the explicit `graphEquiv` — Fix 3 removed
+the `LE` footgun; the class order lives on tags/reps). -/
+example : graphEquiv baseGraph baseGraph :=
+  graphEquiv_refl _
 example : graphInclusion baseTimeMem baseTimeMem :=
   graphInclusion_refl _
 example {l₁ l₂ l₃ : List Type} (h12 : graphInclusion l₁ l₂) (h23 : graphInclusion l₂ l₃) :
@@ -165,6 +167,33 @@ example : (TimeComplexity_log : Type) ∈ (TimeComplexity_log :: baseTimeMem) :=
   graphInclusion_head_mem _ _
 example : TimeComplexity_O1 ∈ baseTimeMem := o1_mem_base
 example : MemoryComplexity_O1 ∈ baseTimeMem := o1Mem_mem_base
+
+/-- Fix 3: SOUND insertions bundle memberships + growth (cannot forget
+the `BigO` half). -/
+example : can_insert_complexity_class_to_graph (axis := .time)
+    (τ := TimeComplexity_log) baseGraph ∧
+    StrictQuantBelow (axis := .time) TimeComplexity_O1 TimeComplexity_log :=
+  can_insert_log_sound
+example : can_insert_quant_sound_between (axis := .time)
+    TimeComplexity_O1 TimeComplexity_linear (TimeComplexity_poly 2) linearList :=
+  linear_inserted_sound
+example : can_insert_quant_sound_below_qual (axis := .memory)
+    MemoryComplexity_O1 MemoryComplexity_log baseTimeMem :=
+  mem_log_inserted_sound
+example : can_insert_quant_sound_equal (axis := .memory)
+    (MemoryComplexity_poly 0) MemoryComplexity_O1 baseTimeMem :=
+  mem_poly_zero_inserted_sound
+
+/-- Fix 4: `poly 0 = O1` coherence — equal in `QuantLE`, distinguished
+in `TagLE` (intensional tags vs semantic reps). -/
+example : QuantLE (axis := .time) (TimeComplexity_poly 0) TimeComplexity_O1 :=
+  quant_poly0_le_o1
+example : QuantLE (axis := .time) TimeComplexity_O1 (TimeComplexity_poly 0) :=
+  quant_o1_le_poly0
+example : ¬ ComplexityLE (TimeComplexity_poly 0) TimeComplexity_O1 :=
+  complexityLE_poly0_not_o1
+example : ComplexityLE TimeComplexity_O1 (TimeComplexity_poly 0) :=
+  complexityLE_o1_poly0
 
 /-! ## 1d. Type-keyed resources — no strings, no `Option`.
 

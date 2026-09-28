@@ -54,9 +54,20 @@ def add2Expr : CExpr DraftCtx (CIntType .I32 true) :=
     (CExpr.lit (α := CIntType .I32 true) (.intLit .I32 true 1 rfl))
     (CExpr.lit (α := CIntType .I32 true) (.intLit .I32 true 2 rfl))
 
-/-- `add2` as a func (name only). -/
+/-- `add2` as a func-proof: declared `(1, 0)` covers body `(1, 0)`
+(N1 parametric `fun _ => K`; program-as-proof: the `bodyLeDeclared`
+proof IS the spec certificate). -/
 def add2Func : CFunc :=
-  { fname := "add2" }
+  { fname := "add2", declaredTime := fun _ => 1, declaredMem := fun _ => 0,
+    bodyTime := fun _ => 1, bodyMem := fun _ => 0,
+    bodyLeDeclared := ⟨fun _ => Nat.le_refl _, fun _ => Nat.le_refl _⟩ }
+
+/-- `puts` external spec used by `helloCall` (`declared 10/0`, N1
+`fun _ => K`). -/
+def putsFunc : CFunc :=
+  { fname := "puts", declaredTime := fun _ => 10, declaredMem := fun _ => 0,
+    bodyTime := fun _ => 10, bodyMem := fun _ => 0,
+    bodyLeDeclared := ⟨fun _ => Nat.le_refl _, fun _ => Nat.le_refl _⟩ }
 
 /-! ## Per-op typing: unsigned `add` preserves, `lt` returns signed `I32` -/
 
@@ -89,9 +100,21 @@ def helloPool : List LiteralPoolEntry := [helloEntry]
 
 example : helloPool.length = 1 := rfl
 
-/-- `hello` call: `puts("hello")` returning I32. -/
+/-- `hello` call: `puts("hello")` returning I32.
+
+N1 parametric: `call` stores `argTime/argMem` + `declaredTime/declaredMem`
+as `Nat → Nat` (here const `fun _ => 1`/`5` for the single `"hello"` arg
++ external `puts` spec `fun _ => 10`/`fun _ => 0`, discharged by
+`Program.callResolves`). Emission unchanged. Checked construction via
+`mkCallWithRaw` computes `1`/`5` from `[.strLit "hello"]`; the explicit
+form below is the leaf/external spelling (`fun _ => K`). -/
 def helloCall : CExpr DraftCtx (CIntType .I32 true) :=
-  CExpr.call "puts" ["\"hello\""]
+  CExpr.call "puts" ["\"hello\""] (fun _ => 1) (fun _ => 5) (fun _ => 10) (fun _ => 0)
+
+/-- Same call via the checked `RawExpr` path (sums by construction, N1
+`declared : Nat → Nat`). -/
+def helloCallChecked : CExpr DraftCtx (CIntType .I32 true) :=
+  mkCallWithRaw "puts" [.strLit "hello"] (fun _ => 10) (fun _ => 0)
 
 /-! ## Pilot: aget (guarded index, proof-required) -/
 
@@ -157,6 +180,7 @@ def test : IO UInt32 := do
   -- expr emitters (Stage A→C sketches)
   ok := (← assertEq "(1 + 2)" (emitExpr add2Expr)) && ok
   ok := (← assertEq "puts(\"hello\")" (emitExpr helloCall)) && ok
+  ok := (← assertEq "puts(\"hello\")" (emitExpr helloCallChecked)) && ok
   ok := (← assertEq "{10, 20, 30, 40}[2]" (emitExpr agetExpr)) && ok
   ok := (← assertEq "(1 ? 2 : 3)" (emitExpr ternEx)) && ok
   ok := (← assertEq "x1 = (x0 + 1);" mapStepStmt) && ok

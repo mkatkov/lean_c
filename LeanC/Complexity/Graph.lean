@@ -26,17 +26,21 @@ inductive CComplexityGraph : (List (Type u)) -> Type (u+1) where
      (τ : Type u ) [CComplexity axis τ]
      (_: CComplexityGraph τs ): CComplexityGraph (τ :: τs)
 
-/-- WHAT graph `LE` means: graphs with a *fixed* base list are all
-equivalent (same knowledge — there is essentially one value per list),
-so `le _ _ := True`; `False` would fail `le_refl`. This is deliberately
-NOT the lattice order — it is intra-list equivalence. The real lattice
-order is `TagLE`/`ComplexityLE`/`QuantLE`; knowledge growth *across*
-different lists is `graphInclusion` below (with `refl`/`trans` and the
-`cons` growth lemma). No code orders graphs by `≤` to compare classes;
-if you are reaching for graph `≤`, you want `ComplexityLE` or
-`QuantLE` instead. -/
-instance {α : List (Type u)} : LE (CComplexityGraph α) where
-  le _ _ := True
+/-- Intra-list equivalence (Fix 3 — explicit, NOT an `LE` instance).
+
+Graphs with a fixed base list are all equivalent (same knowledge —
+one value per list). Previously this was an `LE` instance with
+`le _ _ := True`, which was a footgun: any `g₁ ≤ g₂` on the same list
+typechecked, inviting misuse where the class order (`ComplexityLE` /
+`QuantLE`) was intended. Now it is the explicit `graphEquiv`
+(both directions trivially). Knowledge growth ACROSS lists is
+`graphInclusion` below. If you are reaching for graph `≤`, you want
+`ComplexityLE` or `QuantLE` instead. -/
+def graphEquiv {α : List (Type u)} (_ _ : CComplexityGraph α) : Prop :=
+  True
+
+theorem graphEquiv_refl {α : List (Type u)} (g : CComplexityGraph α) :
+    graphEquiv g g := trivial
 
 /-- WHAT cross-base inclusion means: every class known in `l₁` is known
 in `l₂`. WHY: extending knowledge (`base → base + log`) is list
@@ -118,10 +122,15 @@ abbrev can_insert_complexity_class_to_grapth {τs : List Type} {axis : ResourceA
 
 /-- WHAT `baseTimeMem`/`baseGraph` are: the 10 base classes as a list
 plus its knowledge-base value (nested `insert`s, axis given explicitly
-so typeclass search never sees a stuck metavariable). WHY separate
-`log`/`poly` from base: they are quantitative insertions, not base
-vocabulary — `can_insert_log` below shows the closed mechanism end to
-end, with the two `BigO` proofs as evidence. -/
+so typeclass search never sees a stuck metavariable). WHY 10 not 12:
+`baseTimeMem` is the qualitative spine only (5 time + 5 memory, NO
+`log`/`poly` — they are quantitative insertions). `ComplexityTag` has
+12 constructors (10 + `logTime` + `polyTime k` time rungs that predate
+the open path; memory `log`/`poly` have NO tags by design). See Fix 4
+coherence note in `Lattice` (`complexityLE_poly0_not_o1` /
+`complexityLE_o1_poly0`): `poly 0 = O1` lives in `QuantLE`, not tags.
+`can_insert_log` below shows the closed mechanism end to end, with the
+two `BigO` proofs as evidence. -/
 def baseTimeMem : List Type :=
   [ZeroTimeComplexity, TimeComplexity_O1, TimeComplexity_HALTS,
    TimeComplexity_UNBOUND, TimeComplexity_UNDECIDABLE,
@@ -413,13 +422,36 @@ theorem bounded_mem_base : MemoryComplexity_BOUNDED ∈ baseTimeMem := by
   exact List.Mem.tail _ (List.Mem.tail _ (List.Mem.tail _ (List.Mem.tail _
     (List.Mem.tail _ (List.Mem.tail _ (List.Mem.tail _ (List.Mem.head _)))))))
 
+/-- SOUND closed insertion (Fix 3): `can_insert_log` + semantic
+strictness. The closed predicate alone checks `TagLE` (`BigO` for
+quant–quant, `True` for quant→qual) + syntactic `≠`; this bundles the
+`StrictQuantBelow` diagonal so a duplicate envelope cannot pass as
+`<`. Qualitative successor needs no `¬ BigO` (no rep to negate —
+forgetting via `costInClass_to_halts`). -/
+theorem can_insert_log_sound :
+    can_insert_complexity_class_to_graph (axis := .time)
+      (τ := TimeComplexity_log) baseGraph ∧
+    StrictQuantBelow (axis := .time) TimeComplexity_O1 TimeComplexity_log :=
+  ⟨can_insert_log, strict_o1_log_time⟩
+
+/-- SOUND closed insertion for `poly k` (`1 ≤ k`): memberships + growth. -/
+theorem can_insert_poly_sound {k : Nat} (hk : 1 ≤ k) :
+    can_insert_complexity_class_to_graph (axis := .time)
+      (τ := TimeComplexity_poly k) baseGraph ∧
+    StrictQuantBelow (axis := .time) TimeComplexity_O1 (TimeComplexity_poly k) :=
+  ⟨can_insert_poly hk, strict_o1_poly_time hk⟩
+
 /-- WHAT `mem_log_inserted` shows: memory mirror of `can_insert_log`
 via the OPEN path (no new tags — base tags stay closed by design).
 `O1Mem < O_logMem < BOUNDED`: `BigO` evidence is `bigO_one_le_log` plus
 forgetting into `BOUNDED` (value-level: `costInClass_to_bounded` in
 `Bridge`); strictness is `strict_o1_log_mem` (`Quant`); memberships reuse
 the centralized `o1Mem_mem_base` / `bounded_mem_base` helpers so no tail
-offsets are hardcoded at call sites. -/
+offsets are hardcoded at call sites.
+
+SOUND form is `mem_log_inserted_sound` below
+(`can_insert_quant_sound_below_qual` bundle); this legacy conjunction
+is kept for compat. -/
 theorem mem_log_inserted :
     BigO g1 glog ∧
     StrictQuantBelow (axis := .memory) MemoryComplexity_O1 MemoryComplexity_log ∧
@@ -465,7 +497,8 @@ theorem mem_poly_inserted {k : Nat} (hk : 1 ≤ k) :
 /-- WHAT `mem_poly_zero_inserted` shows: degenerate `polyMem 0 = O1Mem`
 via the OPEN path (`equalTo := [O1Mem]`, strict conjuncts vacuous).
 Pairs with `quant_mem_poly0_le_o1` / `quant_mem_o1_le_poly0` (mutual
-`BigO`), the semantic equality. -/
+`BigO`), the semantic equality. SOUND form is
+`mem_poly_zero_inserted_sound` (`can_insert_quant_sound_equal`). -/
 theorem mem_poly_zero_inserted :
     QuantLE (axis := .memory) (MemoryComplexity_poly 0) MemoryComplexity_O1 ∧
     QuantLE (axis := .memory) MemoryComplexity_O1 (MemoryComplexity_poly 0) ∧
@@ -482,5 +515,21 @@ theorem mem_poly_zero_inserted :
     cases he with
     | head as => exact o1Mem_mem_base
     | tail b h => cases h
+
+/-- SOUND open insertions (Fix 3 bundles — memberships + growth): -/
+theorem mem_log_inserted_sound :
+    can_insert_quant_sound_below_qual (axis := .memory)
+      MemoryComplexity_O1 MemoryComplexity_log baseTimeMem :=
+  ⟨bigO_one_le_log, strict_o1_log_mem, mem_log_inserted.2.2⟩
+
+theorem mem_poly_zero_inserted_sound :
+    can_insert_quant_sound_equal (axis := .memory)
+      (MemoryComplexity_poly 0) MemoryComplexity_O1 baseTimeMem :=
+  ⟨quant_mem_poly0_le_o1, quant_mem_o1_le_poly0, mem_poly_zero_inserted.2.2⟩
+
+theorem mem_poly_inserted_sound {k : Nat} (hk : 1 ≤ k) :
+    can_insert_quant_sound_below_qual (axis := .memory)
+      MemoryComplexity_O1 (MemoryComplexity_poly k) baseTimeMem :=
+  ⟨bigO_one_le_poly k, strict_o1_poly_mem hk, (mem_poly_inserted hk).2.2⟩
 
 end LeanC

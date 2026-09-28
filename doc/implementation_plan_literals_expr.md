@@ -1,6 +1,26 @@
 # Implementation Plan — Literals + Expressions draft (unblocking stdlib)
 
-Self-contained execution plan. An agent with only this document + a checkout
+> HISTORICAL — DO NOT BUILD FROM (Fix 5, 2026-09-27). This plan executed
+> (T1–T8 done, `Tests/TestLiteralsExpr.lean` green, frictions F1–F10 logged
+> in `doc/stdlib_friction.md`). It is retained for history only. Current
+> truth: `doc/next_task.md` (summary + frozen D1–D4 + acceptance) and the
+> code (`LeanC/Literals.lean`, `LeanC/Expr.lean`, `LeanC/CostSpec.lean`,
+> `LeanC/Func.lean`, `LeanC/Program.lean`). Stale names in §1–§2 below
+> (`ResourceBound`, `litBound`/`varBound`/`poolBound`/`exprBound`,
+> `stmtBound`, `CStatement{…, stmtBound}`, `DraftCtx{…, acc}`,
+> `CContext.extend`, `call : List (Σ …) + declaredCost : ResourceBound`)
+> were superseded 2026-09-26 by the generic extended resource model
+> (core: `CResource` + `HasCost` + `RStore`; seam: `costInClass` in
+> `LeanC/Complexity/Bridge.lean`; per-resource preservation in
+> `Examples/Resources.lean`; closed bounds `litTimeBound`/`exprTimeBound`
+> + `poolCells` in `LeanC/CostSpec.lean`; `call : fname + argStrs +
+> argTime/argMem + declaredTime/declaredMem` + `RawExpr` in
+> `LeanC/Expr.lean`; `CFunc`/`ProgramMeetsSpec` proofs in
+> `LeanC/Func.lean`/`LeanC/Program.lean`). Read `XBound` below as
+> "per-resource `HasCost` value + `costInClass` membership", not a struct
+> field. Task numbers T1–T8 here are closed — do not reuse.
+
+Self-contained execution plan (as executed). An agent with only this document + a checkout
 of the repo must be able to implement, build, and test its assigned task
 without reading the design history.
 
@@ -41,7 +61,9 @@ pretty-printer, benchmarks.
   `CGlobalStaticMemoryBlock/CArrayType` (`LeanC/Arrays.lean`),
   `IsCType/CTypeSize`, `CIntType/CCharType/CFloatType/CPointerType`
   (`LeanC/Types.lean`), `CVarScope` (`LeanC/Scopes.lean`),
-  `CStatement{isStatementSound, stmtBound}`.
+  `CStatement{isStatementSound}` (NOTE Fix 5: NO `stmtBound` field —
+  `§2`/`T5` below wrongly list one; costs are per-value combinators in
+  `LeanC/CostSpec.lean` per F8, `Processes`/`Stmt` carry `True` markers).
 - To replace: `LeanC/Expr.lean` (9-line stub `litInt|var Name|add`);
   `LeanC/Variables.lean` (empty); `LeanC/Values.lean` stays as-is
   (read-only context, do not modify).
@@ -58,7 +80,17 @@ pretty-printer, benchmarks.
   `Program → Modules → Func → Expr → Literals → Arrays/Types`;
   `Processes/Context` are leaves imported upward, never import `Expr/Func`.
 
-## 2. Frozen interfaces (do not rename without updating all tasks)
+## 2. Frozen interfaces (HISTORICAL SKETCH — as-planned, not as-built; see banner)
+
+> Fix 5 note: the `ResourceBound` / `litBound` / `varBound` / `poolBound` /
+> `exprBound` / `stmtBound` / `acc` / `extend` / `declaredCost : ResourceBound`
+> names below are the ORIGINAL plan sketch. As-built: per-resource `HasCost`
+> values + `costInClass` (`Bridge`), closed `Nat` bounds
+> (`litTimeBound`/`exprTimeBound`/`poolCells` in `CostSpec`), `DraftCtx{scope,
+> pool, rs, store}` + `setResource` (no `acc`, no `extend`), `CExpr.call :
+> fname + argStrs + argTime/argMem + declaredTime/declaredMem` + `RawExpr`
+> (`Expr`), `CFunc{declared/body + bodyLeDeclared}` + `ProgramMeetsSpec`
+> (`Func`/`Program`). Do not build new code against the sketch.
 
 ```lean
 -- T1 Literals (LeanC/Literals.lean, new; imports Types, TypeClasses, Arrays, Context, Complexity)
