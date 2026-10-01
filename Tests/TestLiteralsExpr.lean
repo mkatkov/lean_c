@@ -51,39 +51,64 @@ example : litFitsType (α := CIntType .I32 true) (.intLit .I32 true 42 rfl) = tr
 /-- `add2` expr: `1 + 2` (signed I32). -/
 def add2Expr : CExpr DraftCtx (CIntType .I32 true) :=
   CExpr.binop CAddOp.add
-    (CExpr.lit (α := CIntType .I32 true) (.intLit .I32 true 1 rfl))
-    (CExpr.lit (α := CIntType .I32 true) (.intLit .I32 true 2 rfl))
+    (CExpr.lit (α := CIntType .I32 true) (.intLit .I32 true 1 rfl) rfl)
+    (CExpr.lit (α := CIntType .I32 true) (.intLit .I32 true 2 rfl) rfl)
 
 /-- `add2` as a func-proof: declared `(1, 0)` covers body `(1, 0)`
 (N1 parametric `fun _ => K`; program-as-proof: the `bodyLeDeclared`
-proof IS the spec certificate). -/
+proof IS the spec certificate). P1-A2: built via `mkFuncWithBody`
+(`calls/nested/bodySrc` computed, not listed). -/
 def add2Func : CFunc :=
-  { fname := "add2", declaredTime := fun _ => 1, declaredMem := fun _ => 0,
-    bodyTime := fun _ => 1, bodyMem := fun _ => 0,
-    bodyLeDeclared := ⟨fun _ => Nat.le_refl _, fun _ => Nat.le_refl _⟩ }
+  mkFuncWithBody "add2" add2Expr (fun _ => 1) (fun _ => 0)
+    ⟨fun _ => Nat.le_refl _, fun _ => Nat.le_refl _⟩
 
 /-- `puts` external spec used by `helloCall` (`declared 10/0`, N1
-`fun _ => K`). -/
+`fun _ => K`). P1-A2: leaf via `mkLeafFunc`. -/
 def putsFunc : CFunc :=
-  { fname := "puts", declaredTime := fun _ => 10, declaredMem := fun _ => 0,
-    bodyTime := fun _ => 10, bodyMem := fun _ => 0,
-    bodyLeDeclared := ⟨fun _ => Nat.le_refl _, fun _ => Nat.le_refl _⟩ }
+  mkLeafFunc "puts" (fun _ => 10) (fun _ => 0)
 
 /-! ## Per-op typing: unsigned `add` preserves, `lt` returns signed `I32` -/
 
 /-- Unsigned `1u + 2u`: `add` on `CUInt32Type` yields `CUInt32Type`. -/
 def uaddExpr : CExpr DraftCtx CUInt32Type :=
   CExpr.binop CAddOp.add
-    (CExpr.lit (α := CUInt32Type) (.intLit .I32 false 1 rfl))
-    (CExpr.lit (α := CUInt32Type) (.intLit .I32 false 2 rfl))
+    (CExpr.lit (α := CUInt32Type) (.intLit .I32 false 1 rfl) rfl)
+    (CExpr.lit (α := CUInt32Type) (.intLit .I32 false 2 rfl) rfl)
 
 /-- Comparing unsigned yields signed `I32`, not unsigned. -/
 def ultExpr : CExpr DraftCtx (CIntType .I32 true) :=
   CExpr.binop CLtOp.lt
-    (CExpr.lit (α := CUInt32Type) (.intLit .I32 false 1 rfl))
-    (CExpr.lit (α := CUInt32Type) (.intLit .I32 false 2 rfl))
+    (CExpr.lit (α := CUInt32Type) (.intLit .I32 false 1 rfl) rfl)
+    (CExpr.lit (α := CUInt32Type) (.intLit .I32 false 2 rfl) rfl)
 
 example : (emitExpr ultExpr) = "(1u < 2u)" := rfl
+
+/-! ## P2 E3b/c hardening: valid casts + struct fields (enforcing, not culture) -/
+
+/-- P2 E3b positive: `widen` I8→I16 typechecks; `cast e (fun _ _ => True)`
+no longer elaborates (second arg must be `ValidCast`). -/
+def i8One : CExpr DraftCtx (CIntType .I8 true) :=
+  CExpr.lit (α := CIntType .I8 true) (.intLit .I8 true 1 rfl) rfl
+
+def i16FromI8 : CExpr DraftCtx (CIntType .I16 true) :=
+  CExpr.cast i8One .widen8_16
+
+example : emitExpr i16FromI8 = "((cast)1)" := rfl
+
+/-- P2 E3c minimal test struct (agent's choice, one place, recorded F18):
+`PairI32` with field `0 : I32`. No other `HasStructField` instances exist
+in P2, so `field` on any other type/idx is ill-typed. -/
+inductive PairI32 where
+| mk : PairI32
+instance : IsCType PairI32 where isCType := True
+instance : HasStructField PairI32 0 (CIntType .I32 true) where ok := trivial
+
+def pairBase : CVarRef DraftCtx PairI32 := CVarRef.mk 0 (by decide)
+def pairVar : CExpr DraftCtx PairI32 := CExpr.var pairBase
+def pairField0 : CExpr DraftCtx (CIntType .I32 true) :=
+  CExpr.field pairVar 0
+
+example : emitExpr pairField0 = "x0.f0" := rfl
 
 /-! ## Pilot: hello (str literal in pool + puts call) -/
 
@@ -112,9 +137,9 @@ def helloCall : CExpr DraftCtx (CIntType .I32 true) :=
   CExpr.call "puts" ["\"hello\""] (fun _ => 1) (fun _ => 5) (fun _ => 10) (fun _ => 0)
 
 /-- Same call via the checked `RawExpr` path (sums by construction, N1
-`declared : Nat → Nat`). -/
+`declared : Nat → Nat`, P2 E2 first-order proof `by simp`). -/
 def helloCallChecked : CExpr DraftCtx (CIntType .I32 true) :=
-  mkCallWithRaw "puts" [.strLit "hello"] (fun _ => 10) (fun _ => 0)
+  mkCallWithRaw "puts" [.strLit "hello"] (by simp [rawArgsFirstOrder, rawCallFnames]) (fun _ => 10) (fun _ => 0)
 
 /-! ## Pilot: aget (guarded index, proof-required) -/
 
@@ -123,7 +148,7 @@ def agetBase : CExpr DraftCtx
     (CGlobalStaticMemoryBlock (CIntType .I32 true) 4) :=
   CExpr.lit (α := CGlobalStaticMemoryBlock (CIntType .I32 true) 4)
     (@CLiteral.tableLit _ _ (CIntType .I32 true) _ 4
-      ⟨#[10, 20, 30, 40], by decide⟩ rfl)
+      ⟨#[10, 20, 30, 40], by decide⟩ rfl) rfl
 
 /-- Index proof: `2 < 4` via `CNatIndex` (Type 0). NOTE: spec says
 `CConstIndex`, but `CConstIndex : Type (u+1)` cannot inhabit
@@ -144,24 +169,26 @@ def agetExpr : CExpr DraftCtx (CIntType .I32 true) :=
 
 /-! ## Pilot: map_step (single-iteration body `y = x + 1`) -/
 
-def mapX : CVarRef DraftCtx (CIntType .I32 true) := CVarRef.mk 0
-def mapY : CVarRef DraftCtx (CIntType .I32 true) := CVarRef.mk 1
+-- P2 E3a: `CVarRef.mk` requires membership proof (`idx < 2` for `DraftCtx`);
+-- `CVarRef.mk 999` without proof does not elaborate (see friction F15).
+def mapX : CVarRef DraftCtx (CIntType .I32 true) := CVarRef.mk 0 (by decide)
+def mapY : CVarRef DraftCtx (CIntType .I32 true) := CVarRef.mk 1 (by decide)
 
 /-- `x + 1` expr. -/
 def mapIncr : CExpr DraftCtx (CIntType .I32 true) :=
   CExpr.binop CAddOp.add (CExpr.var mapX)
-    (CExpr.lit (α := CIntType .I32 true) (.intLit .I32 true 1 rfl))
+    (CExpr.lit (α := CIntType .I32 true) (.intLit .I32 true 1 rfl) rfl)
 
 def mapStepStmt : String := emitAssign mapY mapIncr
 
 /-! ## T7 checks: tern + call + pool + emit -/
 
 def ternGuard : CExpr DraftCtx (CIntType .I32 true) :=
-  CExpr.lit (α := CIntType .I32 true) (.intLit .I32 true 1 rfl)
+  CExpr.lit (α := CIntType .I32 true) (.intLit .I32 true 1 rfl) rfl
 def ternThen : CExpr DraftCtx (CIntType .I32 true) :=
-  CExpr.lit (α := CIntType .I32 true) (.intLit .I32 true 2 rfl)
+  CExpr.lit (α := CIntType .I32 true) (.intLit .I32 true 2 rfl) rfl
 def ternElse : CExpr DraftCtx (CIntType .I32 true) :=
-  CExpr.lit (α := CIntType .I32 true) (.intLit .I32 true 3 rfl)
+  CExpr.lit (α := CIntType .I32 true) (.intLit .I32 true 3 rfl) rfl
 def ternEx : CExpr DraftCtx (CIntType .I32 true) :=
   CExpr.tern ternGuard ternThen ternElse
 

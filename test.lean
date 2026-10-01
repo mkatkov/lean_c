@@ -8,6 +8,7 @@ import Tests.TestMain
 import Tests.TestComplexity
 import Tests.TestLiteralsExpr
 import Tests.TestCostSpec
+import Tests.TestEmit
 import LeanC.Arrays
 
 open Lean IO
@@ -26,4 +27,5 @@ def runAll (runners : List (IO UInt32)) : IO UInt32 := do
 def main : IO UInt32 := do
   -- Add each test module's `main` here in the same order as imports above.
   -- Expand this list when new tests are added under `tests/`.
-  runAll [TestMain.test, TestComplexity.test, TestLiteralsExpr.test, TestCostSpec.test]
+  runAll [TestMain.test, TestComplexity.test, TestLiteralsExpr.test, TestCostSpec.test,
+    TestEmit.test]

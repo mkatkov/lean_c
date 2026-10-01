@@ -378,7 +378,7 @@ the guard through the branch join (`g + max t e + 1`), `call` threads
 `n` (`argTime n + declaredTime n + 1`, N1 parametric). -/
 def exprTimeFn {Γ : Type v} [CContext Γ] {α : Type} [IsCType α] :
     CExpr Γ α → Nat → Nat
-  | .lit l => litTimeFn l
+  | .lit l _ => litTimeFn l
   | .var _ => fun _ => 1
   | @CExpr.unop _ _ _ _ _ _ _ _ _ _ e => fun n => exprTimeFn e n + 1
   | @CExpr.binop _ _ _ _ _ _ _ _ _ _ l r => fun n => exprTimeFn l n + exprTimeFn r n + 1
@@ -395,7 +395,7 @@ except allocating literals. `call` maxes summed arg mem with the
 callee spec (`max (argMem n) (declaredMem n)`, N1 parametric). -/
 def exprMemFn {Γ : Type v} [CContext Γ] {α : Type} [IsCType α] :
     CExpr Γ α → Nat → Nat
-  | .lit l => litMemFn l
+  | .lit l _ => litMemFn l
   | .var _ => fun _ => 0
   | @CExpr.unop _ _ _ _ _ _ _ _ _ _ e => exprMemFn e
   | @CExpr.binop _ _ _ _ _ _ _ _ _ _ l r => fun n => Nat.max (exprMemFn l n) (exprMemFn r n)
@@ -416,7 +416,7 @@ forwards to `litTimeFn`/`litMemFn` (no nested GADT match in an
 expression motive). -/
 def exprTimeBound {Γ : Type v} [CContext Γ] {α : Type} [IsCType α] :
     CExpr Γ α → Nat → Nat
-  | .lit l => litTimeFn l
+  | .lit l _ => litTimeFn l
   | .var _ => fun _ => 1
   | @CExpr.unop _ _ _ _ _ _ _ _ _ _ e => fun n => exprTimeBound e n + 1
   | @CExpr.binop _ _ _ _ _ _ _ _ _ _ l r => fun n => exprTimeBound l n + exprTimeBound r n + 1
@@ -430,7 +430,7 @@ def exprTimeBound {Γ : Type v} [CContext Γ] {α : Type} [IsCType α] :
 
 def exprMemBound {Γ : Type v} [CContext Γ] {α : Type} [IsCType α] :
     CExpr Γ α → Nat → Nat
-  | .lit l => litMemFn l
+  | .lit l _ => litMemFn l
   | .var _ => fun _ => 0
   | @CExpr.unop _ _ _ _ _ _ _ _ _ _ e => exprMemBound e
   | @CExpr.binop _ _ _ _ _ _ _ _ _ _ l r => fun n => Nat.max (exprMemBound l n) (exprMemBound r n)
@@ -459,7 +459,7 @@ case is `≤` via IH + `omega`/`max_mono`. -/
 theorem exprTime_le_bound {Γ : Type v} [CContext Γ] {α : Type} [IsCType α]
     (e : CExpr Γ α) (n : Nat) : exprTimeFn e n ≤ exprTimeBound e n :=
   match e with
-  | .lit _ => Nat.le_refl _
+  | .lit _ _ => Nat.le_refl _
   | .var _ => Nat.le_refl _
   | @CExpr.unop _ _ _ _ _ _ _ _ _ _ e => by
     have ih := exprTime_le_bound e n
@@ -502,7 +502,7 @@ theorem exprTime_le_bound {Γ : Type v} [CContext Γ] {α : Type} [IsCType α]
 theorem exprMem_le_bound {Γ : Type v} [CContext Γ] {α : Type} [IsCType α]
     (e : CExpr Γ α) (n : Nat) : exprMemFn e n ≤ exprMemBound e n :=
   match e with
-  | .lit _ => Nat.le_refl _
+  | .lit _ _ => Nat.le_refl _
   | .var _ => Nat.le_refl _
   | @CExpr.unop _ _ _ _ _ _ _ _ _ _ e => exprMem_le_bound e n
   | @CExpr.binop _ _ _ _ _ _ _ _ _ _ l r => max_mono (exprMem_le_bound l n) (exprMem_le_bound r n)
@@ -523,7 +523,7 @@ that makes `exprTime_in_o1` true; linear callees fail it (caller is
 linear, proved via loops/N4 or `BigO` directly). -/
 def exprCallsO1Time {Γ : Type v} [CContext Γ] {α : Type} [IsCType α] :
     CExpr Γ α → Prop
-  | .lit _ => True
+  | .lit _ _ => True
   | .var _ => True
   | @CExpr.unop _ _ _ _ _ _ _ _ _ _ e => exprCallsO1Time e
   | @CExpr.binop _ _ _ _ _ _ _ _ _ _ l r => exprCallsO1Time l ∧ exprCallsO1Time r
@@ -538,7 +538,7 @@ def exprCallsO1Time {Γ : Type v} [CContext Γ] {α : Type} [IsCType α] :
 /-- N1 gating predicate (memory): same shape with `argMem/declaredMem`. -/
 def exprCallsO1Mem {Γ : Type v} [CContext Γ] {α : Type} [IsCType α] :
     CExpr Γ α → Prop
-  | .lit _ => True
+  | .lit _ _ => True
   | .var _ => True
   | @CExpr.unop _ _ _ _ _ _ _ _ _ _ e => exprCallsO1Mem e
   | @CExpr.binop _ _ _ _ _ _ _ _ _ _ l r => exprCallsO1Mem l ∧ exprCallsO1Mem r
@@ -627,7 +627,7 @@ theorem exprTime_in_o1 {Γ : Type v} [CContext Γ] {α : Type} [IsCType α]
     costInClass (axis := .time) StepCost TimeComplexity_O1 (exprTimeCost e) := by
   show BigO (exprTimeFn e) g1
   match e with
-  | .lit l => exact litTime_in_o1 l
+  | .lit l _ => exact litTime_in_o1 l
   | .var _ => exact BigO.refl _
   | @CExpr.unop _ _ _ _ _ _ _ _ _ _ e =>
     simp only [exprCallsO1Time] at h
@@ -673,7 +673,7 @@ theorem exprMem_in_o1 {Γ : Type v} [CContext Γ] {α : Type} [IsCType α]
     costInClass (axis := .memory) CellCost MemoryComplexity_O1 (exprMemCost e) := by
   show BigO (exprMemFn e) g1
   match e with
-  | .lit l => exact litMem_in_o1 l
+  | .lit l _ => exact litMem_in_o1 l
   | .var _ => exact bigO_zero_le_one
   | @CExpr.unop _ _ _ _ _ _ _ _ _ _ e =>
     simp only [exprCallsO1Mem] at h
@@ -733,13 +733,15 @@ theorem callMemBound_eq {Γ : Type v} [CContext Γ] {α : Type} [IsCType α]
 (`mkCallWithRaw` cannot understate arg costs; N1 threads `n` through
 `declaredTime/Mem`). -/
 theorem mkCallWithRaw_time {Γ : Type v} [CContext Γ] {α : Type} [IsCType α]
-    {fname : String} {args : List RawExpr} {dt dm : Nat → Nat} (n : Nat) :
-    exprTimeFn (Γ := Γ) (α := α) (mkCallWithRaw fname args dt dm) n =
+    {fname : String} {args : List RawExpr} {dt dm : Nat → Nat}
+    (h : rawArgsFirstOrder args) (n : Nat) :
+    exprTimeFn (Γ := Γ) (α := α) (mkCallWithRaw fname args h dt dm) n =
       rawArgsTime args + dt n + 1 := rfl
 
 theorem mkCallWithRaw_mem {Γ : Type v} [CContext Γ] {α : Type} [IsCType α]
-    {fname : String} {args : List RawExpr} {dt dm : Nat → Nat} (n : Nat) :
-    exprMemFn (Γ := Γ) (α := α) (mkCallWithRaw fname args dt dm) n =
+    {fname : String} {args : List RawExpr} {dt dm : Nat → Nat}
+    (h : rawArgsFirstOrder args) (n : Nat) :
+    exprMemFn (Γ := Γ) (α := α) (mkCallWithRaw fname args h dt dm) n =
       Nat.max (rawArgsMem args) (dm n) := rfl
 
 /-- `mkCallWithRaw` arg fns are `O1` (closed sums lifted to const fns). -/
@@ -752,8 +754,9 @@ theorem rawArgsMemFn_in_o1 (args : List RawExpr) : BigO (rawArgsMemFn args) g1 :
 /-- Checked calls with `O1` callee are `O1` (leaf `fun _ => K` case). -/
 theorem mkCallWithRaw_in_o1_time {Γ : Type v} [CContext Γ] {α : Type} [IsCType α]
     {fname : String} {args : List RawExpr} {dt : Nat → Nat}
+    (h : rawArgsFirstOrder args)
     (hdt : BigO dt g1) :
-    BigO (exprTimeFn (Γ := Γ) (α := α) (mkCallWithRaw fname args dt (fun _ => 0))) g1 := by
+    BigO (exprTimeFn (Γ := Γ) (α := α) (mkCallWithRaw fname args h dt (fun _ => 0))) g1 := by
   simpa [mkCallWithRaw, exprTimeFn] using
     callTime_in_o1 (rawArgsTimeFn_in_o1 args) hdt
 

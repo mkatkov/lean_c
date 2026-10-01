@@ -27,8 +27,8 @@ open LeanC
 /-- `1 + 2` over signed I32 (same shape as the stdlib pilot). -/
 def add2 : CExpr DraftCtx (CIntType .I32 true) :=
   CExpr.binop CAddOp.add
-    (CExpr.lit (α := CIntType .I32 true) (.intLit .I32 true 1 rfl))
-    (CExpr.lit (α := CIntType .I32 true) (.intLit .I32 true 2 rfl))
+    (CExpr.lit (α := CIntType .I32 true) (.intLit .I32 true 1 rfl) rfl)
+    (CExpr.lit (α := CIntType .I32 true) (.intLit .I32 true 2 rfl) rfl)
 
 /-- `"hello"` literal (5 cells). -/
 def hello : CLiteral (CGlobalStaticMemoryBlock (CCharType Unit) 5) :=
@@ -88,7 +88,7 @@ example (h : fitsExprAt attiny add2 0 0 0 = true) :
 /-- `puts("hi")` via checked path: arg sums by computation (N1
 `declared : Nat → Nat`, leaf `fun _ => K`). -/
 def putsCall : CExpr DraftCtx (CIntType .I32 true) :=
-  mkCallWithRaw "puts" [.strLit "hi"] (fun _ => 10) (fun _ => 0)
+  mkCallWithRaw "puts" [.strLit "hi"] (by simp [rawArgsFirstOrder, rawCallFnames]) (fun _ => 10) (fun _ => 0)
 
 example (n : Nat) : exprTimeBound putsCall n = rawArgsTime [.strLit "hi"] + 10 + 1 := rfl
 example (n : Nat) : exprMemBound putsCall n = Nat.max (rawArgsMem [.strLit "hi"]) 0 := rfl
@@ -117,29 +117,63 @@ example : costInClass (axis := .memory) CellCost MemoryComplexity_O1
   exprMem_in_o1 _ putsCallO1Mem
 
 /-- `puts` registry entry matching the call above (N1 `fun _ => K`,
-discharges N1 gating + N2 `callResolves`). -/
+discharges N1 gating + N2 `callResolves`). P1-A2: leaf via `mkLeafFunc`
+(empty calls/nested, empty body source, external). -/
 def putsSpec : CFunc :=
-  { fname := "puts", declaredTime := fun _ => 10, declaredMem := fun _ => 0,
-    bodyTime := fun _ => 10, bodyMem := fun _ => 0,
-    bodyLeDeclared := ⟨fun _ => Nat.le_refl _, fun _ => Nat.le_refl _⟩ }
+  mkLeafFunc "puts" (fun _ => 10) (fun _ => 0)
+
+/-- P1-A3 caller whose body calls `puts` (empty args for closed numeric
+proofs): `exprTimeBound = 0 + 10 + 1 = 11`, `exprMemBound = 0`.
+`mkFuncWithBody` computes calls by traversal. -/
+def putsCallerBody : CExpr DraftCtx (CIntType .I32 true) :=
+  mkCallWithRaw "puts" [] rfl (fun _ => 10) (fun _ => 0)
+
+def putsCaller : CFunc :=
+  mkFuncWithBody "puts_caller" putsCallerBody (fun _ => 11) (fun _ => 0)
+    ⟨fun _ => Nat.le_refl _, fun _ => Nat.le_refl _⟩
 
 def progPuts : CProgram :=
-  { mods := [{ funcs := [putsSpec], pool := [] }],
-    main := "puts", pool := [],
-    callSites := [{ fname := "puts", declaredTime := fun _ => 10, declaredMem := fun _ => 0 }] }
+  { mods := [{ funcs := [putsSpec, putsCaller], pool := [] }],
+    main := "puts", pool := [] }
 
 example : callResolves progPuts "puts" (fun _ => 10) (fun _ => 0) :=
   ⟨putsSpec, by simp [programFuncs, progPuts], rfl, rfl, rfl⟩
 
+example : programCallsComputed progPuts =
+    [⟨"puts", (fun _ => 10), (fun _ => 0)⟩] := by
+  simp [programCallsComputed, programFuncs, progPuts, putsSpec, putsCaller,
+    putsCallerBody, mkCallWithRaw, mkFuncWithBody, mkLeafFunc, exprCalls,
+    CFunc.calls, CFunc.fname, CFunc.declaredTime, CFunc.declaredMem]
+
+example : programNestedComputed progPuts = [] := by
+  simp [programNestedComputed, programFuncs, progPuts, putsSpec, putsCaller,
+    putsCallerBody, mkCallWithRaw, mkFuncWithBody, mkLeafFunc, exprNested,
+    CFunc.nested, CFunc.fname]
+
 example : ProgramCallsResolve progPuts := by
   intro s hs
-  simp only [progPuts] at hs
+  have hlist : programCallsComputed progPuts =
+      [⟨"puts", (fun _ => 10), (fun _ => 0)⟩] := by
+    simp [programCallsComputed, programFuncs, progPuts, putsSpec, putsCaller,
+      putsCallerBody, mkCallWithRaw, mkFuncWithBody, mkLeafFunc, exprCalls,
+      CFunc.calls, CFunc.fname, CFunc.declaredTime, CFunc.declaredMem]
+  rw [hlist] at hs
   cases hs with
   | head _ => exact ⟨putsSpec, by simp [programFuncs, progPuts], rfl, rfl, rfl⟩
   | tail _ h => cases h
 
-example (n : Nat) : programWorstTime progPuts n = 10 := by
-  simp [programWorstTime, programFuncs, progPuts, putsSpec]
+example : ProgramNestedResolve progPuts := by
+  intro fname hf
+  have hempty : programNestedComputed progPuts = [] := by
+    simp [programNestedComputed, programFuncs, progPuts, putsSpec, putsCaller,
+      putsCallerBody, mkCallWithRaw, mkFuncWithBody, mkLeafFunc, exprNested,
+      CFunc.nested, CFunc.fname]
+  rw [hempty] at hf
+  cases hf
+
+example (n : Nat) : programWorstTime progPuts n = 11 := by
+  simp [programWorstTime, programFuncs, progPuts, putsSpec, putsCaller,
+    mkLeafFunc, mkFuncWithBody, CFunc.declaredTime, CFunc.declaredMem, CFunc.fname]
 example : programPoolCells progPuts = 0 := rfl
 example : programFitsDevice progPuts attiny 0 0 = true := rfl
 
@@ -149,13 +183,31 @@ example : ProgramMeetsSpec progPuts :=
     (by intro f hf
         simp only [programFuncs, progPuts] at hf
         cases hf with
-        | head _ => exact ⟨fun _ => Nat.le_refl _, fun _ => Nat.le_refl _⟩
-        | tail _ h => cases h)
+        | head _ =>
+          -- putsSpec is leaf: body = declared by construction
+          exact putsSpec.bodyLeDeclared
+        | tail _ h =>
+          cases h with
+          | head _ =>
+            exact putsCaller.bodyLeDeclared
+          | tail _ h => cases h)
     (by intro s hs
-        simp only [progPuts] at hs
+        have hlist : programCallsComputed progPuts =
+            [⟨"puts", (fun _ => 10), (fun _ => 0)⟩] := by
+          simp [programCallsComputed, programFuncs, progPuts, putsSpec, putsCaller,
+            putsCallerBody, mkCallWithRaw, mkFuncWithBody, mkLeafFunc, exprCalls,
+            CFunc.calls, CFunc.fname, CFunc.declaredTime, CFunc.declaredMem]
+        rw [hlist] at hs
         cases hs with
         | head _ => exact ⟨putsSpec, by simp [programFuncs, progPuts], rfl, rfl, rfl⟩
         | tail _ h => cases h)
+    (by intro fname hf
+        have hempty : programNestedComputed progPuts = [] := by
+          simp [programNestedComputed, programFuncs, progPuts, putsSpec, putsCaller,
+            putsCallerBody, mkCallWithRaw, mkFuncWithBody, mkLeafFunc, exprNested,
+            CFunc.nested, CFunc.fname]
+        rw [hempty] at hf
+        cases hf)
 
 /-! ## Fix 2: pool + width + full budget -/
 
@@ -180,7 +232,7 @@ example (h : fitsBudget attiny 1 0 5 0 = true) :
 
 /-- Linear callee spec (`fun n => n`, not `O1`): caller threads `n`. -/
 def linearCall : CExpr DraftCtx (CIntType .I32 true) :=
-  mkCallWithRaw "f" [] (fun n => n) (fun _ => 0)
+  mkCallWithRaw "f" [] rfl (fun n => n) (fun _ => 0)
 
 example : exprTimeFn linearCall 5 = 0 + 5 + 1 := rfl
 example : exprTimeFn linearCall 10 = 0 + 10 + 1 := rfl
@@ -210,37 +262,103 @@ example : rawMemBound nestedRaw = ("hi".length) := by
 example : rawArgsMem [.callRaw "f" [.strLit "hi"]] = ("hi".length) := by
   simp [rawArgsMem, rawMemBound, Nat.max_eq_right, Nat.zero_le]
 
-/-! ## N2: program certificate — unresolved call has no proof + measured body -/
+/-! ## P1-A3/A4: bogus-in-body — omission impossible + first-order nested rule -/
 
-/-- Bogus program: call site `bogus` has no registry entry. -/
+/-- Bogus body: `call "bogus"` built IN A BODY via `mkCallWithRaw`
+(empty args for closed proofs), not via a listed site. Registry
+(`putsSpec` + this caller) lacks `"bogus"`. There is no list to omit
+from — `programCallsComputed` traverses stored bodies. -/
+def bogusBody : CExpr DraftCtx (CIntType .I32 true) :=
+  mkCallWithRaw "bogus" [] rfl (fun _ => 1) (fun _ => 0)
+
+def bogusCaller : CFunc :=
+  mkFuncWithBody "bogus_caller" bogusBody (fun _ => 2) (fun _ => 0)
+    ⟨fun _ => Nat.le_refl _, fun _ => Nat.le_refl _⟩
+
+/-- Bogus program: registry has `puts` + caller, but caller traverses to
+`bogus` which is unregistered.
+P2 E1: no open-constructor forgery remains — there is no structure-literal
+syntax for `CFunc`/`CModule`/`CProgram` outside smart constructors
+(`mkFuncWithBody`/`mkLeafFunc`); omission trick impossible (checked by rg,
+acceptance §6.2). -/
 def progBogus : CProgram :=
-  { mods := [{ funcs := [putsSpec], pool := [] }],
-    main := "puts", pool := [],
-    callSites := [{ fname := "bogus", declaredTime := fun _ => 1, declaredMem := fun _ => 0 }] }
+  { mods := [{ funcs := [putsSpec, bogusCaller], pool := [] }],
+    main := "puts", pool := [] }
+
+example : programCallsComputed progBogus =
+    [⟨"bogus", (fun _ => 1), (fun _ => 0)⟩] := by
+  simp [programCallsComputed, programFuncs, progBogus, putsSpec, bogusCaller,
+    bogusBody, mkCallWithRaw, mkFuncWithBody, mkLeafFunc, exprCalls,
+    CFunc.calls, CFunc.fname, CFunc.declaredTime, CFunc.declaredMem]
 
 example : ¬ ProgramCallsResolve progBogus := by
   intro h
-  have hsite := h _ (List.Mem.head _)
-  unfold ProgramCallsResolve at h
+  have hlist : programCallsComputed progBogus =
+      [⟨"bogus", (fun _ => 1), (fun _ => 0)⟩] := by
+    simp [programCallsComputed, programFuncs, progBogus, putsSpec, bogusCaller,
+      bogusBody, mkCallWithRaw, mkFuncWithBody, mkLeafFunc, exprCalls,
+      CFunc.calls, CFunc.fname, CFunc.declaredTime, CFunc.declaredMem]
+  have hmem : (⟨"bogus", (fun _ => 1), (fun _ => 0)⟩ : CallSite) ∈ programCallsComputed progBogus := by
+    rw [hlist]
+    exact List.Mem.head _
+  have hsite := h _ hmem
   simp only [callResolves, programFuncs, progBogus] at hsite
   obtain ⟨f, hf, hfname, _, _⟩ := hsite
-  have hfmem : f ∈ ([putsSpec] : List CFunc) := by
-    simpa [programFuncs, progBogus] using hf
-  have heq : f = putsSpec := List.mem_singleton.mp hfmem
-  subst heq
-  simp [putsSpec] at hfname
+  cases hf with
+  | head _ =>
+    simp [putsSpec, mkLeafFunc, CFunc.fname, CFunc.declaredTime, CFunc.declaredMem] at hfname
+  | tail _ h =>
+    cases h with
+    | head _ =>
+      simp [bogusCaller, mkFuncWithBody, bogusBody, mkCallWithRaw, CFunc.fname] at hfname
+    | tail _ h => cases h
 
 example : ¬ ProgramMeetsSpec progBogus := by
   intro h
   have hc := h.callsResolve
-  have hsite := hc _ (List.Mem.head _)
+  have hlist : programCallsComputed progBogus =
+      [⟨"bogus", (fun _ => 1), (fun _ => 0)⟩] := by
+    simp [programCallsComputed, programFuncs, progBogus, putsSpec, bogusCaller,
+      bogusBody, mkCallWithRaw, mkFuncWithBody, mkLeafFunc, exprCalls,
+      CFunc.calls, CFunc.fname, CFunc.declaredTime, CFunc.declaredMem]
+  have hmem : (⟨"bogus", (fun _ => 1), (fun _ => 0)⟩ : CallSite) ∈ programCallsComputed progBogus := by
+    rw [hlist]
+    exact List.Mem.head _
+  have hsite := hc _ hmem
   simp only [callResolves, programFuncs, progBogus] at hsite
   obtain ⟨f, hf, hfname, _, _⟩ := hsite
-  have hfmem : f ∈ ([putsSpec] : List CFunc) := by
-    simpa [programFuncs, progBogus] using hf
-  have heq : f = putsSpec := List.mem_singleton.mp hfmem
-  subst heq
-  simp [putsSpec] at hfname
+  cases hf with
+  | head _ =>
+    simp [putsSpec, mkLeafFunc, CFunc.fname, CFunc.declaredTime, CFunc.declaredMem] at hfname
+  | tail _ h =>
+    cases h with
+    | head _ =>
+      simp [bogusCaller, mkFuncWithBody, bogusBody, mkCallWithRaw, CFunc.fname] at hfname
+    | tail _ h => cases h
+
+/-- P1-A4 nested rule (first-order-only choice, recorded) + P2 E2 gate:
+`nestedRaw` stays a `rawMemBound`-only example, never lifted to `CExpr`.
+`rawCallFnames nestedRaw = ["puts", "f"]` (outer + inner), but
+`exprNested` of any `mkCallWithRaw`-built `CExpr` is `[]` (erased
+`argStrs`); lifting nested args would require `ProgramNestedResolve`
+which fails without `"f"` registered. P2 E2: lifting this arg list is
+ill-typed by the gate (`mkCallWithRaw` requires `rawArgsFirstOrder`);
+the `¬ rawArgsFirstOrder […]` below is the proof that lifting it is
+ill-typed. -/
+example : rawCallFnames nestedRaw = ["puts", "f"] := by
+  simp [nestedRaw, rawCallFnames]
+
+example : rawIsFirstOrder (.strLit "hi") := by
+  simp [rawIsFirstOrder, rawCallFnames]
+
+example : ¬ rawArgsFirstOrder [.callRaw "f" [.strLit "hi"]] := by
+  simp [rawArgsFirstOrder, rawCallFnames]
+
+example : exprNested putsCallerBody = [] := by
+  simp [putsCallerBody, mkCallWithRaw, exprNested]
+
+example : exprNested bogusBody = [] := by
+  simp [bogusBody, mkCallWithRaw, exprNested]
 
 /-- N2 measured body: `add2` func built via `mkFuncWithBody` (not free `Nat`s). -/
 def add2Measured : CFunc :=
@@ -315,7 +433,7 @@ def test : IO UInt32 := do
   -- N1 checked call bounds at 0 (1 + 10 + 1 = 12 time, max 2 0 = 2 mem)
   ok := (← assertEq "12" (toString (exprTimeBound putsCall 0))) && ok
   ok := (← assertEq "2" (toString (exprMemBound putsCall 0))) && ok
-  ok := (← assertEq "10" (toString (programWorstTime progPuts 0))) && ok
+  ok := (← assertEq "11" (toString (programWorstTime progPuts 0))) && ok
   ok := (← assertEq "true" (toString (programFitsDevice progPuts attiny 0 0))) && ok
   -- Fix 2: pool + width + full budget
   ok := (← assertEq "5" (toString (poolCells [{ ty := CGlobalStaticMemoryBlock (CCharType Unit) 5, cells := 5 }]))) && ok

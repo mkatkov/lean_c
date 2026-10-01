@@ -7,6 +7,14 @@ Goals
 - Encode semantics in Lean to support machine-checked proofs about the generated C (safety, functional correctness, performance bounds).
 - Produce minimal, portable, and verifiable C binaries.
 
+Program-is-proof (binding intent, see `doc/next_task.md` §0): a `CProgram`
+value alone is data. The certificate is the separate `ProgramMeetsSpec p`
+proof (main resolves, every body fits its declaration, every call site
+resolves against the registry). Emitters and budgets trust only
+`(p, ProgramMeetsSpec p)` — never a bare program — and call sites are
+computed by traversal of stored bodies (omission impossible), not
+producer-listed.
+
 Roadmap sections
 
 ## 1. Types
@@ -34,6 +42,8 @@ Milestones
 - M1: Define the core `ctype` inductive in Lean.
 - M2: Implement size_of/alignment_of tunable by target.
 - M3: Add struct layout and padding rules.
+  Status (2026-09-28): stub — inductives exist (`LeanC/Types.lean`), no
+  target-parameterized sizes, no layout/padding proofs; out of scope for P1.
 
 ### Bootstrap header generation
 Goal: Because C primitive sizes (e.g., `int`, `short`, `long`) are target- and implementation-defined, introduce a bootstrap step that emits a target-specific header file with explicit size and alignment guarantees used by the generator.
@@ -155,6 +165,9 @@ Milestones
 - M1: Statement AST and simple code generation.
 - M2: Block scoping and local variable allocation.
 - M3: Loop semantics with invariants for verification.
+  Status (2026-09-28): stub — payload-free markers only
+  (`LeanC/Stmt.lean`); costs are per-value combinators (`LeanC/CostSpec.lean`);
+  loop costs live in `LeanC/Loop.lean` (`forN`), statement syntax is future work.
 
 ## 5. Functions
 Goal: Define functions, calling conventions, parameter passing, and return values aligned with Clight/CompCert model.
@@ -178,6 +191,11 @@ Milestones
 - M1: Function AST and code gen for simple functions.
 - M2: Stack frame layout and parameter passing model.
 - M3: External function bindings and runtime stubs.
+  Status (2026-09-28): partial — `CFunc{declared/body + bodyLeDeclared}` +
+  `mkFuncWithBody` measured tie landed; P1-A adds computed `calls`/`nested`
+  + `mkLeafFunc` (see `doc/next_task.md`); frame layout still future work.
+  Status (2026-09-30): P2 enforcing (`CFunc` inductive, first-order gate,
+  var/cast/field/lit proofs landed).
 
 ## 6. Modules
 Goal: Provide a modular compilation model: multiple translation units, symbol visibility, and linking model.
@@ -198,6 +216,8 @@ Proof obligations
 Milestones
 - M1: Support multiple translation units and global declarations.
 - M2: Implement static vs external linkage semantics.
+  Status (2026-09-28): stub — `CModule{funcs + pool}` data only
+  (`LeanC/Modules.lean`); no visibility/linking model.
 
 ## 7. Program
 Goal: The top-level program representation tying modules, entry point, and runtime configuration together.
@@ -217,7 +237,16 @@ Proof obligations
 
 Milestones
 - M1: Minimal end-to-end pipeline that generates and compiles a small program.
+  Status (2026-09-29): landed P1-B thin slice — `emitProgram`
+  demanding the `ProgramMeetsSpec` proof + `Tests/TestEmit.lean` compiling
+  with `cc` and running the binary; see `doc/next_task.md` §§1–7.
 - M2: Integration with Lean proofs: map source-level proofs to preserved C behaviors.
+  Status (2026-09-29): landed P1-A traversal-closed (
+  `CFunc` stores computed `calls`/`nested`, program lists are `flatMap`
+  defs, `CProgram.callSites` field removed); emitter takes the proof
+  (D11); see `doc/next_task.md` §§0–7.
+  Status (2026-09-30): P2 enforcing (`CFunc` inductive, first-order gate,
+  var/cast/field/lit proofs landed).
 
 ## 8. Memory model & evaluation semantics
 Goal: Provide a memory model compatible with CompCert/Clight to reason about pointers, aliasing and I/O.
@@ -238,6 +267,8 @@ Proof obligations
 Milestones
 - M1: Define block memory model in Lean.
 - M2: Prove simple program memory safety.
+  Status (2026-09-28): stub — `LeanC/Memory.lean` re-exports `Arrays`
+  blocks only; full allocation/load/store/aliasing is future work.
 
 ## 9. Verification & Performance targets
 Goal: Define what properties we will prove and how to measure performance.
@@ -283,6 +314,10 @@ Milestones
   in `Tests`) + `0`-iter `O1`, `whileTrue` marker (no inhabitant),
   fuel-recursion sketch; see `doc/next_task.md` §7
   (`Tests/TestCostSpec.lean`, `LeanC/Loop.lean` green).
+  Status (2026-09-29, P1 landed): traversal-closed certificate
+  (`programCallsComputed`, bogus-in-body rejection) + thin emission slice
+  (`emitProgram` from the proof, `cc`-compiled test); P0 record condensed
+  to `doc/next_task.md` §8; see `doc/next_task.md` §§0–7.
 
 ## Extras and Notes
 - Targeting Clight/CompCert semantics is highly beneficial: reuse proven semantics and style of proofs from CompCert papers and code.
@@ -291,9 +326,13 @@ Milestones
 - Provide examples and integration tests.
 
 ## Next steps
-- Implement `ctype` and literal AST in Lean and write unit tests.
-- Add a small example Lean function and implement the pipeline to emit C for it.
-- Align Lean encodings with Clight definitions and start writing the first translation correctness lemma.
+- P1-A: traversal-closed program certificate (`CFunc` stores computed calls,
+  `CProgram.callSites` removed, bogus-in-body rejection). See
+  `doc/next_task.md` §§1–7.
+- P1-B: thin emission slice (`emitProgram` from `ProgramMeetsSpec`,
+  `cc`-compiled + run test). See `doc/next_task.md` §§1–7.
+- Then: statement payloads, memory model, ABI header (`doc/roadmap.md`
+  §§1,4–6,8 remain stubs).
 
 
 

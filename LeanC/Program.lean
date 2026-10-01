@@ -1,4 +1,5 @@
 import LeanC.Context
+import LeanC.Func
 import LeanC.Modules
 import LeanC.CostSpec
 
@@ -9,34 +10,27 @@ A `CProgram` value alone is data. The claim "this program meets its
 spec" is the SEPARATE `ProgramMeetsSpec p` proof below: main resolves,
 every func body fits its declaration (N1 parametric pointwise), every
 `call` site's stored `declaredTime/Mem` functions match the registry
-(N2 `ProgramCallsResolve` over the program's `callSites` list), and the
-worst envelope + pool are explicit (`worstTime/worstMem/poolCells` as
-`Nat → Nat` at input size `n`). Build a `CProgram`, then prove
-`ProgramMeetsSpec` — that proof IS the spec certificate budgets and
-emitters trust, never the bare value. Unresolved call ⇒ no proof: the
-`callsResolve` field demands `callResolves` per site, so a bogus
-`fname` (or mismatched spec fns) has no `ProgramMeetsSpec` proof.
+(P1-A3 `ProgramCallsResolve` over the COMPUTED `programCallsComputed`
+list — `flatMap` over stored bodies, never producer-listed), every nested
+`RawExpr` fname exists (`ProgramNestedResolve`), and the worst envelope +
+pool are explicit (`worstTime/worstMem/poolCells` as `Nat → Nat` at input
+size `n`). Build a `CProgram`, then prove `ProgramMeetsSpec` — that proof
+IS the spec certificate budgets and emitters trust, never the bare value.
+Unresolved call ⇒ no proof: the `callsResolve` field demands
+`callResolves` per computed site, so a body containing `call "bogus" …`
+has no `ProgramMeetsSpec` proof even if the producer "forgets" to list it
+(omission impossible — there is no list to omit from, D9).
 -/
 
 namespace LeanC
 
-/-- N2 call site: one `CExpr.call` occurrence's stored spec — `fname` +
-`declaredTime/Mem` functions (N1 parametric). Producer lists every call
-site in `CProgram.callSites`; `ProgramCallsResolve` checks each against
-the registry. -/
-structure CallSite where
-  (fname : String)
-  (declaredTime : Nat → Nat)
-  (declaredMem : Nat → Nat)
-
-/-- WHAT a program is: modules + designated `main` + pool + call-site
-list (N2: explicit registry-match obligation). -/
+/-- WHAT a program is: modules + designated `main` + pool (P1-A3: NO
+stored site list — call-site lists are computed `flatMap` defs below,
+D9. P2 E4: vacuous True soundness field deleted). -/
 structure CProgram where
   (mods : List CModule)
   (main : String)
   (pool : List LiteralPoolEntry)
-  (callSites : List CallSite := [])
-  (isProgSound : Prop := True)
 
 /-- All funcs in all modules (flat registry for call resolution). -/
 def programFuncs (p : CProgram) : List CFunc :=
@@ -67,22 +61,47 @@ def callResolves (p : CProgram) (fname : String)
     (dt dm : Nat → Nat) : Prop :=
   ∃ f ∈ programFuncs p, f.fname = fname ∧ f.declaredTime = dt ∧ f.declaredMem = dm
 
-/-- N2 program-wide call resolution: every listed call site resolves.
-Unresolved call ⇒ no proof (existential fails for bogus `fname` or
-mismatched spec fns). -/
+/-- P1-A3: program call sites COMPUTED, never stored (D9): `flatMap`
+over stored `CFunc.calls` (themselves computed by `exprCalls` traversal
+at `mkFuncWithBody`). Omission impossible by construction.
+Transitivity note (P2 E4): `flatMap` over ALL funcs already covers
+multi-hop bogus (B's direct `calls` include `bogus` even if A calls B) —
+no fixpoint needed. -/
+def programCallsComputed (p : CProgram) : List CallSite :=
+  (programFuncs p).flatMap (fun f => f.calls)
+
+/-- P1-A3 nested obligations computed (D12 existence-only): `flatMap`
+over stored `CFunc.nested` (`exprNested` traversal). -/
+def programNestedComputed (p : CProgram) : List String :=
+  (programFuncs p).flatMap (fun f => f.nested)
+
+/-- P1-A3 program-wide call resolution over the COMPUTED list: every
+traversed call site resolves. Unresolved call ⇒ no proof (existential
+fails for bogus `fname` or mismatched spec fns). A body containing
+`call "bogus" …` yields no `ProgramMeetsSpec` even if the producer
+"forgets" — there is no list to forget from. -/
 def ProgramCallsResolve (p : CProgram) : Prop :=
-  ∀ s ∈ p.callSites, callResolves p s.fname s.declaredTime s.declaredMem
+  ∀ s ∈ programCallsComputed p, callResolves p s.fname s.declaredTime s.declaredMem
+
+/-- P1-A3/D12 nested resolution (existence only): every nested `RawExpr`
+`fname` names a registered func (`== true`). Under the first-order-only
+restriction (P1-A4) computed lists are `[]` and this holds vacuously;
+it still closes the hole if traversal ever populates `nested`. -/
+def ProgramNestedResolve (p : CProgram) : Prop :=
+  ∀ fname ∈ programNestedComputed p, ∃ f ∈ programFuncs p, (f.fname == fname) = true
 
 /-- THE program spec certificate: main resolves + every body fits its
-declaration (pointwise `∀ n`) + every call site resolves (N2) +
-(extensionally) the worst envelope covers every func pointwise.
-Carrying `callResolves` per call site is via `ProgramCallsResolve`
-over `p.callSites`; this bundles the program-wide obligations. -/
+declaration (pointwise `∀ n`) + every COMPUTED call site resolves (P1-A3)
++ every nested fname exists + (extensionally) the worst envelope covers
+every func pointwise. Carrying `callResolves` per call site is via
+`ProgramCallsResolve` over `programCallsComputed`; this bundles the
+program-wide obligations. -/
 structure ProgramMeetsSpec (p : CProgram) : Prop where
   mainExists : ∃ f ∈ programFuncs p, f.fname = p.main
   allBodiesFit : ∀ f ∈ programFuncs p,
     (∀ n, f.bodyTime n ≤ f.declaredTime n) ∧ (∀ n, f.bodyMem n ≤ f.declaredMem n)
   callsResolve : ProgramCallsResolve p
+  nestedResolve : ProgramNestedResolve p
   worstCovers : ∀ f ∈ programFuncs p, ∀ n,
     f.declaredTime n ≤ programWorstTime p n ∧ f.declaredMem n ≤ programWorstMem p n
 
@@ -160,17 +179,19 @@ theorem programFitsDevice_true {p : CProgram} {d : DeviceSpec} {n sc : Nat}
   exact fitsBudget_true h
 
 /-- Build the full certificate from its parts: worst-cover + bodies +
-calls + main. The `worstCovers` field is always `programWorstCovers p`,
-so a program proof is three obligations (main + bodies + calls), never
-four. Unresolved call ⇒ no `callsResolve` proof ⇒ no `ProgramMeetsSpec`
-(see negative test with bogus `fname`). -/
+calls + nested + main. The `worstCovers` field is always
+`programWorstCovers p`, so a program proof is four obligations
+(main + bodies + calls + nested), never five. Unresolved call ⇒ no
+`callsResolve` proof ⇒ no `ProgramMeetsSpec` (see bogus-in-body
+negative test). -/
 theorem mkProgramMeetsSpec (p : CProgram)
     (hmain : ∃ f ∈ programFuncs p, f.fname = p.main)
     (hbodies : ∀ f ∈ programFuncs p,
       (∀ n, f.bodyTime n ≤ f.declaredTime n) ∧ (∀ n, f.bodyMem n ≤ f.declaredMem n))
-    (hcalls : ProgramCallsResolve p) :
+    (hcalls : ProgramCallsResolve p)
+    (hnested : ProgramNestedResolve p) :
     ProgramMeetsSpec p :=
   { mainExists := hmain, allBodiesFit := hbodies, callsResolve := hcalls,
-    worstCovers := programWorstCovers p }
+    nestedResolve := hnested, worstCovers := programWorstCovers p }
 
 end LeanC

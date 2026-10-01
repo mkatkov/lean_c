@@ -71,6 +71,27 @@ instance {v : Nat} : CIndex (CNatIndex v) where
   isIndex := True
   value := v
 
+/-- P2 E3b valid casts only (home: `Expr.lean`, agent's choice — keeps
+import closure small; `Ops.lean` rejected to avoid `Context` import).
+Each ctor IS the permission: `cast e (fun _ _ => True)` no longer
+elaborates (second arg must be `ValidCast`, not a function). Minimal ctor
+set: signed widening chain + unsigned + float.
+`α β` are indices (after `:`), not params, so ctors may vary them
+(same reason `CExpr` uses indices; params would force `α` fixed). -/
+inductive ValidCast : (α β : Type) → Type where
+| widen8_16 : ValidCast (CIntType .I8 true) (CIntType .I16 true)
+| widen16_32 : ValidCast (CIntType .I16 true) (CIntType .I32 true)
+| widen32_64 : ValidCast (CIntType .I32 true) (CIntType .I64 true)
+| toUnsigned32 : ValidCast (CIntType .I32 true) (CIntType .I32 false)
+| toFloat32 : ValidCast (CIntType .I32 true) (CFloatType .F32)
+
+/-- P2 E3c struct-field membership (home: `Expr.lean`). `HasStructField`
+is a `Prop`-valued class: only types with an instance can form `field`.
+No core instances (test struct instance lives in `Tests/`). Emits same
+`.f{idx}`. -/
+class HasStructField (S : Type) (idx : Nat) (α : Type) : Prop where
+  ok : True
+
 /-- Intrinsically typed C expression. `Γ` is the context type, `α` the C
 type (`Type 0`). Memory safety by proof args (`isAllocated`/
 `within_bounds` — no proof = no term). `deref`/`index`/`addr` carry
@@ -78,16 +99,18 @@ equality proofs (like `CLiteral`) so `emitExpr` matches without
 refining indices — required for dependent elimination with multiple
 GADT ctors (see friction F5b). `unop`/`binop` carry their operator type
 `Op` plus `UnOpSig`/`BinOpSig` typing (see `Ops.lean`) — illegal
-`lt`-returns-pointer terms are unrepresentable. -/
+`lt`-returns-pointer terms are unrepresentable.
+P2 E3: `lit` takes `litFitsType = true`, `cast` takes `ValidCast`,
+`field` takes `HasStructField` (no `True`). -/
 inductive CExpr (Γ : Type v) [CContext Γ] : (α : Type) → [IsCType α] → Type 1 where
-| lit   {α : Type} [IsCType α] : CLiteral α → CExpr Γ α
+| lit   {α : Type} [IsCType α] : (l : CLiteral α) → litFitsType l = true → CExpr Γ α
 | var   {α : Type} [IsCType α] : CVarRef Γ α → CExpr Γ α
 | unop  {Op In Out : Type} [IsCType In] [IsCType Out] [IsCUnOp Op] [UnOpSig Op In Out] :
     Op → CExpr Γ In → CExpr Γ Out
 | binop {Op In Out : Type} [IsCType In] [IsCType Out] [IsCBinOp Op] [BinOpSig Op In Out] :
     Op → CExpr Γ In → CExpr Γ In → CExpr Γ Out
 | cast  {α β : Type} [IsCType α] [IsCType β] :
-    CExpr Γ α → (α → β → Prop) → CExpr Γ β
+    CExpr Γ α → ValidCast α β → CExpr Γ β
 | deref {γ β : Type} [IsCType γ] [IsCType β] [IsPointedCType β] [CArray γ] :
     CExpr Γ γ → γ = CPointerType β → CArray.isAllocated γ → CExpr Γ β
 | addr  {α β : Type} [IsCType α] [IsCType β] :
@@ -96,7 +119,7 @@ inductive CExpr (Γ : Type v) [CContext Γ] : (α : Type) → [IsCType α] → T
     CExpr Γ γ → γ = CGlobalStaticMemoryBlock β n → (ι : Type) → [CIndex ι] →
     CArray.within_bounds γ ι → CExpr Γ β
 | field {S α : Type} [IsCType S] [IsCType α] :
-    CExpr Γ S → (idx : Nat) → (h : True) → CExpr Γ α
+    CExpr Γ S → (idx : Nat) → [HasStructField S idx α] → CExpr Γ α
 | tern  {α : Type} [IsCType α] :
     CExpr Γ (CIntType .I32 true) → CExpr Γ α → CExpr Γ α → CExpr Γ α
 | call  {α : Type} [IsCType α] :
@@ -166,12 +189,37 @@ def rawArgsTimeFn (args : List RawExpr) : Nat → Nat :=
 def rawArgsMemFn (args : List RawExpr) : Nat → Nat :=
   fun _ => rawArgsMem args
 
+/-- Collect all `callRaw` fnames in untyped syntax (P1-A1): `callRaw`
+conses its fname plus flatMap over args; `add` appends; leaves `[]`.
+Used by `Func.exprNested` for nested obligations (D12) and by the
+first-order restriction (`rawIsFirstOrder`) below. -/
+def rawCallFnames : RawExpr → List String
+  | .callRaw f args => f :: (args.flatMap rawCallFnames)
+  | .add l r => rawCallFnames l ++ rawCallFnames r
+  | _ => []
+
+/-- First-order restriction (P1-A4, agent's choice): `RawExpr` args lifted
+to `CExpr` via `mkCallWithRaw` must contain no nested `callRaw`
+(`rawCallFnames = []`). `nestedRaw` stays a `rawMemBound`-only example,
+never lifted. Nested `fname`s that *are* lifted become `exprNested`
+obligations discharged by `ProgramNestedResolve`; this predicate documents
+the discipline that `CExpr.call`'s erased `argStrs` carry no hidden calls.
+See `doc/stdlib_friction.md` F13. -/
+def rawIsFirstOrder : RawExpr → Prop
+  | r => rawCallFnames r = []
+
+/-- List version: all args first-order (no nested `callRaw`). -/
+def rawArgsFirstOrder (args : List RawExpr) : Prop :=
+  args.flatMap rawCallFnames = []
+
 /-- Checked `call` constructor: `argTime/argMem` by computation from
-`args` (as const fns), `argStrs` by emission. Only
-`declaredTime/declaredMem : Nat → Nat` remain as explicit assumptions
+`args` (as const fns), `argStrs` by emission. P2 E2: takes
+`(h : rawArgsFirstOrder args)` — nested lift fails to typecheck.
+Only `declaredTime/declaredMem : Nat → Nat` remain as explicit assumptions
 (discharged by `Program`). -/
 def mkCallWithRaw {Γ : Type v} [CContext Γ] {α : Type} [IsCType α]
     (fname : String) (args : List RawExpr)
+    (_h : rawArgsFirstOrder args)
     (declaredTime declaredMem : Nat → Nat) : CExpr Γ α :=
   CExpr.call fname (args.map emitRaw)
     (rawArgsTimeFn args) (rawArgsMemFn args) declaredTime declaredMem
@@ -181,8 +229,8 @@ are erased — they have no runtime content). Operators emit via their
 `IsCUnOp`/`IsCBinOp` instances — no closed match on all ops. -/
 def emitExpr {Γ : Type v} [CContext Γ] {α : Type} [IsCType α] :
     CExpr Γ α → String
-| .lit l => emitLit l
-| .var (.mk idx) => s!"x{idx}"
+| .lit l _ => emitLit l
+| .var (@CVarRef.mk _ _ _ _ idx _ _) => s!"x{idx}"
 | @CExpr.unop _ _ Op In _ _ _ _ _ op e =>
     s!"({emitUnOp (Op := Op) op}{emitExpr (α := In) e})"
 | @CExpr.binop _ _ Op In _ _ _ _ _ op l r =>

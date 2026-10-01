@@ -10,11 +10,12 @@ namespace LeanC
 /-- WHAT a module is: a translation unit — function list plus the
 live global-statics pool (`LiteralPoolEntry`, see `Context`) plus its
 worst-case envelope (folded `max` over member funcs, so the module is
-a proof that every member fits the envelope). -/
+a proof that every member fits the envelope).
+P2 E4: vacuous True soundness field deleted; only real
+`moduleAllBodiesFit` remains. -/
 structure CModule where
   (funcs : List CFunc)
   (pool : List LiteralPoolEntry)
-  (isModSound : Prop := True)
 
 /-- Worst declared time over member funcs (module envelope, N1
 parametric: pointwise `max` at input size `n`). -/

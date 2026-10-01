@@ -4,6 +4,13 @@ the goal of the project is to be able to produce C code from lean4 code with som
  1. C code is portable and can be compiled on many platforms, moreover the final binaries can be very small
  2. C code can be proven to have certain properties, like runtime guarantees, memory safety, etc. using lean proofs.
 
+Program-is-proof: a `CProgram` value alone is data; the certificate is the
+separate `ProgramMeetsSpec p` proof (main resolves, bodies fit declarations,
+every call site resolves against the registry, with call sites computed by
+traversal of stored bodies — omission impossible). Emitters and budgets trust
+only `(p, ProgramMeetsSpec p)`: the proof is what gets emitted as C
+(see `doc/next_task.md` §0 and `doc/roadmap.md` Goals).
+
 # Current status
 The project is in its early stage. 
 we initially implement minimal subset of https://xavierleroy.org/publi/Clight.pdf or C99 that can produce running C program.

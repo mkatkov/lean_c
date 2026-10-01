@@ -218,3 +218,58 @@ unbounded (`whileTrue`, no fuel) reduces to N5 marker; `0` iters is
 Next: `∑`-lemma for variable-`iters` loops when `for`/`while` syntax
 lands (`Stmt`); keep mem `max` (diagonal mem stays `O1` under uniform
 bound).
+## F13 -- traversal-closed certificate friction (P1-A)
+Where: LeanC/Expr.lean (rawCallFnames, rawIsFirstOrder/rawArgsFirstOrder), LeanC/Func.lean (CallSite moved per D10, exprCalls/exprNested, CFunc calls/nested/bodySrc, mkFuncWithBody computed + mkLeafFunc), LeanC/Program.lean (programCallsComputed/programNestedComputed, ProgramCallsResolve/ProgramNestedResolve, no stored list), Tests/TestCostSpec.lean (computed-list fixtures, bogus-in-body).
+Pain: GADT collectors must mirror exprTimeFn @-patterns for all 11 ctors; simp needs explicit unfolding set (mkLeafFunc/mkFuncWithBody/exprCalls/exprNested + body defs); List.Mem uses head/tail (not inl/inr), cases already unifies f (no subst needed); struct literals with fun need parens inside list; ascribed ({...} : CallSite) membership fails to parse -- use field form for equality + angle for membership; CExpr.call stores only erased argStrs, so exprNested (.call ...) is [] by construction (first-order-only choice P1-A4).
+Choice (recorded): traversal home = Func.lean (not new Calls.lean); bodySrc := emitExpr body ++ ";" computed; mkLeafFunc for externals (bodySrc := ""); nestedRaw stays rawMemBound-only (second branch of A4).
+Next: full CFunc opacity; transitive closure (currently direct calls only).
+
+## F14 -- thin emission slice friction (P1-B)
+Where: LeanC/Emit.lean (emitFuncDef/emitProgram demanding ProgramMeetsSpec, D11), Tests/TestEmit.lean (certified demo to /tmp .c via cc to run exit 0), test.lean.
+Pain: Lean s! with C braces needs escaping which parses fragilely -- use ++ concatenation; IO.Process.output simpler than spawn+wait; postfix catch invalid in 4.23 -- use try/catch blocks; cc vs gcc probed at runtime (try cc, fallback gcc); empty-args puts() does NOT compile against libc puts(const char*) -- demo uses pure add2-shaped body; pool ty : Type unprintable -- emit as comment.
+Choice (recorded): new Emit.lean (not Program extension); external emits comment, never redefinition; int main calls p.main + return 0.
+Next: multi-unit linking, ABI header, struct layout, Clight semantics out of scope.
+
+> P2 enforcing follow-up (2026-09-30, `lake build` + `./.lake/build/bin/test` green): E1–E6 landed (`CFunc` inductive, first-order gate, var/cast/field/lit proofs, module/program/emit cleanup, fixtures migrated, docs updated). F15–F20 below (each Where/Pain/Choice/Next + green marker).
+
+## F15 -- `CFunc` inductive vs private-structure fallback (P2 E1)
+Where: `LeanC/Func.lean:92-138` (inductive `withBody`/`leaf` + computed `def`s + `bodyLeDeclared`), `LeanC/Emit.lean:26-30` (match, not empty-string test).
+Pain: computed `def`s matching on existential `CExpr Γ α` (`withBody` stores body + `IsCType` instance) trigger "typeclass stuck on metavariable" with dot-patterns (`| .withBody f _ _ _ _`); `bodyLeDeclared` for `withBody` must be defeq to `hle` after unfolding `bodyTime`/`declaredTime`; `emitFuncDef` with `.withBody ..` similarly stuck; old `simp` sets unfolding structure literals no longer unfold `CFunc.calls/nested/fname`.
+Choice (recorded): inductive preferred (no fallback needed — kernel accepts existential `Γ α` as ctor-implicits, same reason `RawExpr` works); all computed `def`s + `emitFuncDef` use `@CFunc.withBody _ _ _ _ …` patterns (cf. F6); `Tests/` simp sets add `CFunc.calls/nested/fname/declaredTime/declaredMem`; `emitFunc` helper deleted (no deprecated alias); `CallSite` expected values switched to angle `⟨…⟩` so open-constructor `rg` shows only `Func.lean`.
+Next: keep inductive permanently; never reintroduce structure fields/defaults on proof-relevant data.
+Green: `lake build` + `./.lake/build/bin/test` exits `0`.
+
+## F16 -- `VarScope` shape + `DraftCtx` decidability (P2 E3a)
+Where: `LeanC/Variables.lean:31-42` (`VarScope` class + `DraftCtx idx < 2` instance + `Decidable` helper), `LeanC/Expr.lean:233` (`@CVarRef.mk` in `emitExpr`), `Tests/TestLiteralsExpr.lean:145-146` (`mk 0/1 by decide`).
+Pain: `CVarRef.mk` with ctor-only `[VarScope Γ]` + proof breaks dot-pattern `| .mk idx _ _` in `toNat` ("function expected … has type CVarRef") — instance-implicit cannot be wild-carded in dot-pattern; `by decide` for `scopeContains` fails ("failed to synthesize Decidable") because class projection does not unfold for synthesis; `CExpr.var`/`addr` signatures would need `[VarScope Γ]` if the instance lived on the type (avoided via ctor-only).
+Choice (recorded): one place `VarScope` in `Variables.lean` (`scopeContains : Nat → α → Prop`); ctor-only instance+proof so type mentions need no new constraint; `@CVarRef.mk _ _ _ _ idx _ _` in `toNat`/`emitExpr`; `DraftCtx` minimal `idx < 2` + explicit `Decidable` instance via `inferInstanceAs (Decidable (idx < 2))` (defeq unfolding); tests use `mk 0 (by decide)`/`mk 1 (by decide)`; proof-free alias deleted (no deprecated alias); attempted `CVarRef.mk 999` without proof fails (verified 2026-09-30): `Type mismatch CVarRef.mk 999 has type VarScope.scopeContains … → CVarRef … but expected CVarRef …` (missing proof arg).
+Next: full `scope[idx]?` lookup + type equality + de Bruijn shifting when statement syntax lands; keep `Scopes.CVarScope` untouched.
+Green: `lake build` + `./.lake/build/bin/test` exits `0`.
+
+## F17 -- `ValidCast` home + ctor set (P2 E3b)
+Where: `LeanC/Expr.lean:79-86` (`ValidCast` inductive), `LeanC/Expr.lean:110-111` (`cast` takes `ValidCast`), `Tests/TestLiteralsExpr.lean:89-95` (`widen8_16` positive).
+Pain: `inductive ValidCast (α β : Type) [IsCType α] …` with concrete ctors (`ValidCast (I8) (I16)`) rejected ("mismatched inductive type parameter … must be fixed … consider making an index"); `cast e (fun _ _ => True)` previously allowed anything.
+Choice (recorded): home `Expr.lean` (not `Ops.lean` — avoids `Context` import); `α β` are indices (`inductive ValidCast : Type → Type → Type`), no `IsCType` on `ValidCast` itself (already on `CExpr.cast`); minimal 5 ctors (`widen8_16/16_32/32_64`, `toUnsigned32`, `toFloat32`); positive `i16FromI8` via `.widen8_16` + `emitExpr = "((cast)1)"`; no existing `cast` uses in `Tests/` to migrate (verified by `rg`); attempted `cast e (fun _ _ => True)` fails (verified 2026-09-30): `has type … → Prop but expected ValidCast …`.
+Next: wider table (signed→unsigned with range proof, float sizes) when stdlib needs it; keep second arg as `ValidCast`, never a function.
+Green: `lake build` + `./.lake/build/bin/test` exits `0`.
+
+## F18 -- `StructField` shape + test struct (P2 E3c)
+Where: `LeanC/Expr.lean:90-92` (`HasStructField` Prop class), `LeanC/Expr.lean:122` (`field` takes instance), `Tests/TestLiteralsExpr.lean:97-110` (`PairI32` + instance + `pairField0`).
+Pain: `(h : True)` allowed any `idx` + any `α`; explicit vs instance-implicit choice affects `@`-pattern arity (both keep 9 args, so collectors unchanged — verified); no core instances desired (would weaken enforcement).
+Choice (recorded): `class HasStructField (S) (idx) (α) : Prop` with `ok : True` (Prop-valued class, instance-implicit on `field`); no core instances; minimal test struct `PairI32` in `Tests/` with `HasStructField PairI32 0 I32`; positive `pairField0` emits `x0.f0`; `field` with `True` no longer elaborates.
+Next: real struct layout/padding when Types M3 lands; keep membership proof, never `True`.
+Green: `lake build` + `./.lake/build/bin/test` exits `0`.
+
+## F19 -- `lit`-proof threading pain (P2 E3d)
+Where: `LeanC/Expr.lean:104` (`.lit` takes `litFitsType = true`), `LeanC/Func.lean:44,63` (`.lit _ _` wildcards), `LeanC/CostSpec.lean` (8 `.lit` arms), `Tests/` (all `CExpr.lit` sites + `rfl`).
+Pain: every `.lit` match arm needs extra `_` (`.lit _` → `.lit _ _`, `.lit l` → `.lit l _`); every construction needs proof (`42 fits I32` is `rfl`-provable since `decide` reduces, but `simp` set must still unfold `litFitsType` for non-obvious values); non-int `= true` cases stay vacuous (same as today, recorded TODO).
+Choice (recorded): `rfl` for all int `1`/`2`/`42` + table `rfl` (definitionally `true`); `CostSpec` arms forwarded to `litTimeFn`/`litMemFn` unchanged otherwise; out-of-range `intLit` + `rfl` fails (verified 2026-09-30): `has type ? = ? but expected litFitsType (intLit I8 … 99999 …) = true`.
+Next: float/char/str/table range checks when Literals M2 lands; keep proof arg, never bare `CLiteral`.
+Green: `lake build` + `./.lake/build/bin/test` exits `0`.
+
+## F20 -- `h`-at-call-sites pain + `Bootstrap` removal (P2 E2/E6)
+Where: `LeanC/Expr.lean:220-225` (`mkCallWithRaw` takes `h`), `LeanC/CostSpec.lean:735-758` (theorems take `h`), `Tests/` (all 4+1 sites), `LeanC/Bootstrap.lean` deleted.
+Pain: `rfl` proves `rawArgsFirstOrder []` (empty reduces definitionally) but NOT `rawArgsFirstOrder [.strLit …]` ("application type mismatch … has type ? = ?") — `flatMap` does not reduce by `rfl`; `by decide` fails ("failed to synthesize Decidable") because def does not unfold for synthesis; old `simp` sets miss `CFunc.calls/nested` after E1 (see F15).
+Choice (recorded): empty args `rfl`; non-call args `by simp [rawArgsFirstOrder, rawCallFnames]` (both defs in set, per spec); `CostSpec` theorems thread `h` (proof-erased, `rfl` still proves time/mem equations); `nestedRaw` stays `rawMemBound`-only + `¬ rawArgsFirstOrder […]` + "lifting ill-typed by E2" comment; attempted nested lift with `rfl` fails (verified 2026-09-30): `has type ? = ? but expected rawArgsFirstOrder [callRaw "f" …]`; `Bootstrap.whitelist_bool` deleted (was `true` for all ctors, dead code, unimported — deletion chosen over vacuous proof, per spec C9).
+Next: keep gate permanently; never lift `callRaw` args without proof.
+Green: `lake build` + `./.lake/build/bin/test` exits `0`.

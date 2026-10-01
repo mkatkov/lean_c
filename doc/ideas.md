@@ -6,6 +6,19 @@ In the spirit of Lean it is reasonable to have the compiled program to produce c
 
 Currently, the idea is to have all C language concepts as Lean types, and restrictions applied by the classes. In this way the Lean compiler complains that the type cannot be synthesized. We need to check whether this can be implemented cleaner.
 
+## Program is a proof of specs
+
+The program IS the proof of specs, and the proof is what gets emitted (say,
+in C). A `CProgram` value alone is data; `ProgramMeetsSpec p` is the
+certificate (main resolves, every body fits its declaration, every call site
+resolves). From P1 on, call sites are computed by traversal of stored bodies
+(`CFunc.calls`/`nested` set by `mkFuncWithBody`, program lists are `flatMap`
+defs) — there is no producer-supplied list to omit from, so an unresolved
+call has no certificate by construction. The emitter takes the proof
+(`emitProgram (p) (_ : ProgramMeetsSpec p)`), so uncertified programs are
+unemittable by type. See `doc/next_task.md` §0 (binding where older text
+conflicts).
+
 
 ## Scopes and types
 
